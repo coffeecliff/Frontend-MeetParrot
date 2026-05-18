@@ -18,8 +18,18 @@ import { profileStyles as styles } from '../../styles/screens/profileStyles';
 
 import { useRouter } from 'expo-router';
 
+import { useAuth } from '../../hooks/useAuth';
+
 export default function Profile() {
     const router = useRouter();
+
+    const { logout } = useAuth();
+
+    const handleLogout = async () => {
+        await logout();
+
+        router.replace('/auth/login');
+    };
 
     const [showProfilePopup, setShowProfilePopup] =
         useState(false);
@@ -250,6 +260,24 @@ export default function Profile() {
                 </ScrollView>
 
             </View>
+
+            {/* LOGOUT */}
+            <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={handleLogout}
+                style={{ marginTop: 20 }}
+            >
+                <Text
+                    style={{
+                        color: '#ff4d4d',
+                        fontSize: 16,
+                        fontWeight: '700',
+                        paddingRight: 100,
+                    }}
+                >
+                    Sair da Conta
+                </Text>
+            </TouchableOpacity>
 
             {/* PROFILE PHOTO POPUP */}
             <Modal

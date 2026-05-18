@@ -13,6 +13,8 @@ import {
 
 import { useRouter } from 'expo-router';
 
+import { useAuth } from '../../hooks/useAuth';
+
 import { CalendarDays } from 'lucide-react-native';
 
 import { registerStyles as styles } from '../../styles/screens/registerStyles';
@@ -22,6 +24,8 @@ import { Input } from '../../components/Input';
 
 export default function Register() {
     const router = useRouter();
+
+    const { register } = useAuth();
 
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
@@ -54,9 +58,26 @@ export default function Register() {
         }
 
         try {
-            router.replace('/chat/select');
+            const success = await register(
+                name,
+                email,
+                password
+            );
+
+            if (success) {
+                router.replace('/chat/select');
+            } else {
+                Alert.alert(
+                    'Erro',
+                    'Não foi possível criar a conta'
+                );
+            }
+
         } catch (error) {
-            Alert.alert('Erro', 'Erro ao registrar');
+            Alert.alert(
+                'Erro',
+                'Erro ao registrar'
+            );
         }
     };
 

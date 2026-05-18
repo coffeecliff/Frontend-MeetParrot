@@ -1,6 +1,6 @@
 export const API_CONFIG = {
-    BASE_URL: 'MEU SERVIDOR BACKEND',
-    SOCKET_URL: 'MEU SERVIDOR SEM O PREFIXO API',
+    BASE_URL: 'https://backend-meetparrot.onrender.com/api',
+    SOCKET_URL: 'https://backend-meetparrot.onrender.com',
     TIMEOUT: 60000
 }
 

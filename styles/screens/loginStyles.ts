@@ -25,8 +25,8 @@ export const loginStyles = StyleSheet.create({
     },
 
     parrot: {
-        width: 200,
-        height: 200,
+        width: 220,
+        height: 220,
 
         marginBottom: -8,
     },
@@ -133,7 +133,7 @@ export const loginStyles = StyleSheet.create({
 
         fontSize: 12,
         color: colors.titleSecondary,
-        marginBottom: 60,
+        marginBottom: 80,
     },
 
     registerLink: {

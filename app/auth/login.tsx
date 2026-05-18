@@ -17,12 +17,12 @@ import { loginStyles as styles } from '../../styles/screens/loginStyles';
 
 import { Input } from '../../components/Input';
 
-// import { useAuth } from '../../hooks/useAuth';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function Login() {
     const router = useRouter();
 
-    // const { login } = useAuth();
+    const { login } = useAuth();
 
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -36,15 +36,15 @@ export default function Login() {
         }
 
         try {
-            // const success = await Login(email, password);
+            const success = await login(email, password);
 
-            // if (success) {
-            //     router.replace('/home');
-            // } else {
-            //     Alert.alert('Erro', 'Credenciais inválidas. Tente novamente.');
-            // }
+            if (success) {
+                router.replace('/chat/select');
+            } else {
+                Alert.alert('Erro', 'Credenciais inválidas. Tente novamente.');
+            }
 
-            router.replace('/chat/select');
+            
         } catch (error) {
             Alert.alert(
                 'Erro',
@@ -52,6 +52,8 @@ export default function Login() {
             );
         }
     };
+
+
 
     return (
         <KeyboardAvoidingView

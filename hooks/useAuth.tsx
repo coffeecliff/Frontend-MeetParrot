@@ -34,7 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const Login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<boolean> => {
     try {
       const response = await apiService.Login(email, password);
       setUser(response.user);
@@ -46,7 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const Register = async (username: string, email: string, password: string): Promise<boolean> => {
+  const register = async (username: string, email: string, password: string): Promise<boolean> => {
     try {
       const response = await apiService.Register(username, email, password);
       setUser(response.user);
@@ -58,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const Logout = async () => {
+  const logout = async () => {
     try {
       await apiService.Logout();
       wsService.disconnected();
@@ -72,9 +72,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     isAuthenticated: !!user,
     isLoading,
-    Login,
-    Register,
-    Logout
+    login,
+    register,
+    logout
   };
 
   return (
