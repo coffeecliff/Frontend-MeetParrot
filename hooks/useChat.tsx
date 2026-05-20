@@ -1,52 +1,109 @@
 import { useCallback, useEffect, useState } from 'react';
+
 import { ChatMessage } from '../constants/types';
-import { MessageDTO, MatchDTO, QueueStatusDTO } from '../constants/api-types';
+
+import {
+    MessageDTO,
+    MatchDTO,
+    QueueStatusDTO,
+} from '../constants/api-types';
+
 import { wsService } from '../services/websocket';
 
+type MessageStatus =
+    | 'sending'
+    | 'sent'
+    | 'failed';
+
 export function useChat(category: string) {
-    const [messages, setMessages] = useState<ChatMessage[]>([]);
-    const [isConnected, setIsConnected] = useState(false);
-    const [isMatching, setIsMatching] = useState(true);
-    const [isReconnecting, setIsReconnecting] = useState(false);
-    const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
-    const [partnerName, setPartnerName] = useState<string>('Procurando...');
+    const [messages, setMessages] = useState<
+        (ChatMessage & {
+            status?: MessageStatus;
+        })[]
+    >([]);
 
-    const handleNewMessage = useCallback((data: MessageDTO) => {
-        const newMessage: ChatMessage = {
-            id: data.id,
-            text: data.message,
-            isUser: false,
-            timestamp: new Date(data.timestamp),
-            userName: data.username || 'Desconhecido',
-        };
-        setMessages(prev => [...prev, newMessage]);
-    }, []);
+    const [isConnected, setIsConnected] =
+        useState(false);
 
-    const handleMatchFound = useCallback((data: MatchDTO) => {
-        console.log('Match found:', data);
+    const [isMatching, setIsMatching] =
+        useState(true);
 
-        const partner = data.partner?.username || 'Stranger';
+    const [isReconnecting, setIsReconnecting] =
+        useState(false);
 
-        setCurrentRoomId(data.roomId);
-        setIsConnected(true);
-        setIsReconnecting(false);
-        setMessages([]);
-        setPartnerName(partner);
+    const [currentRoomId, setCurrentRoomId] =
+        useState<string | null>(null);
 
-        // Persiste a sessão para sobreviver a reconnects
-        wsService.saveSession(data.roomId, data.category, partner);
+    const [partnerName, setPartnerName] =
+        useState<string>('Procurando...');
 
-        setTimeout(() => {
-            setIsMatching(false);
-        }, 800);
+    // ─────────────────────────────────────────────────────────────
+    // Eventos
+    // ─────────────────────────────────────────────────────────────
 
-        wsService.joinRoom(data.roomId);
-    }, []);
+    const handleNewMessage = useCallback(
+        (data: MessageDTO) => {
+            const newMessage: ChatMessage = {
+                id: data.id,
+                text: data.message,
+                isUser: false,
+                timestamp: new Date(data.timestamp),
+                userName:
+                    data.username || 'Desconhecido',
+            };
+
+            setMessages((prev) => [
+                ...prev,
+                newMessage,
+            ]);
+        },
+        []
+    );
+
+    const handleMatchFound = useCallback(
+        async (data: MatchDTO) => {
+            console.log('Match found:', data);
+
+            const partner =
+                data.partner?.username ||
+                'Stranger';
+
+            setCurrentRoomId(data.roomId);
+            setIsConnected(true);
+            setIsReconnecting(false);
+            setMessages([]);
+            setPartnerName(partner);
+
+            await wsService.saveSession(
+                data.roomId,
+                data.category,
+                partner
+            );
+
+            const response =
+                await wsService.joinRoom(
+                    data.roomId
+                );
+
+            if (!response.success) {
+                console.error(
+                    'Failed to join room:',
+                    response.error
+                );
+
+                return;
+            }
+
+            setTimeout(() => {
+                setIsMatching(false);
+            }, 800);
+        },
+        []
+    );
 
     const handleUserLeft = useCallback(() => {
-        console.log('Partner left the chat');
+        console.log('Partner left');
 
-        // Limpa sessão persistida pois a sala encerrou
         wsService.clearSession();
 
         setIsConnected(false);
@@ -54,134 +111,314 @@ export function useChat(category: string) {
         setPartnerName('Procurando...');
         setIsMatching(true);
 
-        setTimeout(() => {
-            wsService.findMatch(category);
+        setTimeout(async () => {
+            await wsService.findMatch(category);
         }, 1000);
     }, [category]);
 
-    const handleQueueStatus = useCallback((data: QueueStatusDTO) => {
-        console.log('Queue status:', data);
-        setIsMatching(true);
-    }, []);
+    const handleQueueStatus = useCallback(
+        (data: QueueStatusDTO) => {
+            console.log(
+                'Queue status:',
+                data
+            );
 
-    const handleQueueJoined = useCallback((data: { category: string; position: number }) => {
-        console.log('Queue joined confirmed:', data);
-        setIsMatching(true);
-    }, []);
+            setIsMatching(true);
+        },
+        []
+    );
 
-    const handleQueueTimeout = useCallback((data: { message: string; category: string }) => {
-        console.warn('Queue timeout:', data.message);
-        // Tenta novamente automaticamente após timeout
-        setIsMatching(true);
-        setTimeout(() => {
-            wsService.findMatch(category);
-        }, 2000);
-    }, [category]);
+    const handleQueueJoined = useCallback(
+        (data: {
+            category: string;
+            position: number;
+        }) => {
+            console.log(
+                'Queue joined:',
+                data
+            );
 
-    const handleSessionState = useCallback((data: { inQueue: boolean; category: string | null; currentRoom: string | null }) => {
-        console.log('Session state from server:', data);
-        // Se o servidor diz que não há sala ativa, limpa o estado local
-        if (!data.currentRoom) {
-            wsService.clearSession();
-            setCurrentRoomId(null);
-            setIsConnected(false);
-            if (!data.inQueue) {
-                setIsMatching(true);
-                wsService.findMatch(category);
+            setIsMatching(true);
+        },
+        []
+    );
+
+    const handleQueueTimeout = useCallback(
+        async (data: {
+            message: string;
+            category: string;
+        }) => {
+            console.warn(
+                'Queue timeout:',
+                data.message
+            );
+
+            setTimeout(async () => {
+                await wsService.findMatch(
+                    category
+                );
+            }, 2000);
+        },
+        [category]
+    );
+
+    const handleSessionState = useCallback(
+        (data: {
+            inQueue: boolean;
+            category: string | null;
+            currentRoom: string | null;
+        }) => {
+            console.log(
+                'Session state:',
+                data
+            );
+
+            if (!data.currentRoom) {
+                wsService.clearSession();
+
+                setCurrentRoomId(null);
+                setIsConnected(false);
+
+                if (!data.inQueue) {
+                    setIsMatching(true);
+
+                    wsService.findMatch(
+                        category
+                    );
+                }
             }
-        }
-    }, [category]);
+        },
+        [category]
+    );
 
-    // Listener de reconnect para atualizar estado visual
-    const handleReconnectAttempt = useCallback(() => {
-        setIsReconnecting(true);
-    }, []);
+    const handleReconnectAttempt =
+        useCallback(() => {
+            setIsReconnecting(true);
+        }, []);
 
-    const handleReconnected = useCallback(() => {
-        setIsReconnecting(false);
-        // Solicita estado real ao servidor após reconexão para sincronizar
-        wsService.requestSessionState();
-    }, []);
+    const handleReconnected =
+        useCallback(() => {
+            setIsReconnecting(false);
+
+            wsService.requestSessionState();
+        }, []);
+
+    // ─────────────────────────────────────────────────────────────
+    // Inicialização
+    // ─────────────────────────────────────────────────────────────
 
     useEffect(() => {
-        const initializeWebSocket = async () => {
-            try {
-                if (!wsService.connected) {
-                    await wsService.connect();
+        const initialize =
+            async (): Promise<void> => {
+                try {
+                    if (
+                        !wsService.connected
+                    ) {
+                        await wsService.connect();
+                    }
+
+                    wsService.onMessage(
+                        handleNewMessage
+                    );
+
+                    wsService.onMatchingFound(
+                        handleMatchFound
+                    );
+
+                    wsService.onUserLeft(
+                        handleUserLeft
+                    );
+
+                    wsService.onPartnerDisconnected(
+                        handleUserLeft
+                    );
+
+                    wsService.onQueueJoined(
+                        handleQueueJoined
+                    );
+
+                    wsService.onQueueTimeout(
+                        handleQueueTimeout
+                    );
+
+                    wsService.onSessionState(
+                        handleSessionState
+                    );
+
+                    wsService.socket?.on(
+                        'queue-status',
+                        handleQueueStatus
+                    );
+
+                    wsService.socket?.on(
+                        'reconnect_attempt',
+                        handleReconnectAttempt
+                    );
+
+                    wsService.socket?.on(
+                        'reconnect',
+                        handleReconnected
+                    );
+
+                    const response =
+                        await wsService.findMatch(
+                            category
+                        );
+
+                    if (!response.success) {
+                        console.error(
+                            'Failed to join queue:',
+                            response.error
+                        );
+
+                        setIsMatching(false);
+
+                        return;
+                    }
+
+                    setIsMatching(true);
+                } catch (error) {
+                    console.error(
+                        'WebSocket init error:',
+                        error
+                    );
                 }
+            };
 
-                wsService.onMessage(handleNewMessage);
-                wsService.onMatchingFound(handleMatchFound);
-                wsService.onUserLeft(handleUserLeft);
-                wsService.onPartnerDisconnected(handleUserLeft);
-                wsService.onQueueJoined(handleQueueJoined);
-                wsService.onQueueTimeout(handleQueueTimeout);
-                wsService.onSessionState(handleSessionState);
-
-                wsService.socket?.on('queue-status', handleQueueStatus);
-                wsService.socket?.on('reconnect_attempt', handleReconnectAttempt);
-                wsService.socket?.on('reconnect', handleReconnected);
-
-                console.log('Starting match search for category:', category);
-                wsService.findMatch(category);
-                setIsMatching(true);
-            } catch (error) {
-                console.error('WebSocket connection error:', error);
-            }
-        };
-
-        initializeWebSocket();
+        initialize();
 
         return () => {
             wsService.removeAllListeners();
         };
-    }, [category, handleNewMessage, handleMatchFound, handleUserLeft, handleQueueStatus, handleQueueJoined, handleQueueTimeout, handleSessionState, handleReconnectAttempt, handleReconnected]);
+    }, [
+        category,
+        handleMatchFound,
+        handleNewMessage,
+        handleQueueJoined,
+        handleQueueStatus,
+        handleQueueTimeout,
+        handleReconnectAttempt,
+        handleReconnected,
+        handleSessionState,
+        handleUserLeft,
+    ]);
 
-    const sendMessage = async (text: string) => {
-        if (!text.trim() || !currentRoomId) return;
+    // ─────────────────────────────────────────────────────────────
+    // Send Message
+    // ─────────────────────────────────────────────────────────────
 
-        const newMessage: ChatMessage = {
-            id: Date.now().toString(),
+    const sendMessage = async (
+        text: string
+    ) => {
+        if (
+            !text.trim() ||
+            !currentRoomId
+        ) {
+            return;
+        }
+
+        const tempId =
+            Date.now().toString();
+
+        const optimisticMessage: ChatMessage & {
+            status?: MessageStatus;
+        } = {
+            id: tempId,
             text: text.trim(),
             isUser: true,
             timestamp: new Date(),
             userName: 'Você',
+            status: 'sending',
         };
 
-        setMessages(prev => [...prev, newMessage]);
+        setMessages((prev) => [
+            ...prev,
+            optimisticMessage,
+        ]);
 
-        try {
-            wsService.sendMessage(currentRoomId, text.trim());
-        } catch (error) {
-            console.error('Error sending message:', error);
+        const response =
+            await wsService.sendMessage(
+                currentRoomId,
+                text.trim()
+            );
+
+        setMessages((prev) =>
+            prev.map((msg) => {
+                if (msg.id !== tempId) {
+                    return msg;
+                }
+
+                return {
+                    ...msg,
+                    status: response.success
+                        ? 'sent'
+                        : 'failed',
+                };
+            })
+        );
+
+        if (!response.success) {
+            console.error(
+                'Message failed:',
+                response.error
+            );
         }
     };
 
-    const findNewPartner = () => {
-        if (currentRoomId) {
-            wsService.leaveRoom(currentRoomId);
-        }
+    // ─────────────────────────────────────────────────────────────
+    // Novo parceiro
+    // ─────────────────────────────────────────────────────────────
 
-        wsService.clearSession();
+    const findNewPartner =
+        async (): Promise<void> => {
+            try {
+                if (currentRoomId) {
+                    await wsService.leaveRoom(
+                        currentRoomId
+                    );
+                }
 
-        setIsConnected(false);
-        setIsMatching(true);
-        setMessages([]);
-        setCurrentRoomId(null);
-        setPartnerName('Procurando...');
+                await wsService.clearSession();
 
-        try {
-            wsService.findMatch(category);
-        } catch (error) {
-            console.error('Error finding match:', error);
-            setIsMatching(false);
-        }
-    };
+                setIsConnected(false);
+                setIsMatching(true);
+                setMessages([]);
+                setCurrentRoomId(null);
+                setPartnerName(
+                    'Procurando...'
+                );
+
+                const response =
+                    await wsService.findMatch(
+                        category
+                    );
+
+                if (!response.success) {
+                    console.error(
+                        'Find match failed:',
+                        response.error
+                    );
+
+                    setIsMatching(false);
+                }
+            } catch (error) {
+                console.error(
+                    'Find new partner error:',
+                    error
+                );
+            }
+        };
+
+    // ─────────────────────────────────────────────────────────────
+    // Cleanup
+    // ─────────────────────────────────────────────────────────────
 
     useEffect(() => {
         return () => {
             if (currentRoomId) {
-                wsService.leaveRoom(currentRoomId);
+                wsService.leaveRoom(
+                    currentRoomId
+                );
             }
         };
     }, [currentRoomId]);

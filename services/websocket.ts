@@ -1,6 +1,9 @@
-import asyncStorage from '@react-native-async-storage/async-storage';
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { io, Socket } from 'socket.io-client';
+
 import { API_CONFIG } from './config';
+
 import {
     ServerToClientEvents,
     ClientToServerEvents,
@@ -10,55 +13,78 @@ import {
 
 type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
-// Chaves de persistência no AsyncStorage
+type AckResponse<T = unknown> = {
+    success: boolean;
+    error?: string;
+    data?: T;
+};
+
 const STORAGE_KEYS = {
-    TOKEN:    'authToken',
-    ROOM_ID:  'session:roomId',
+    TOKEN: 'authToken',
+    ROOM_ID: 'session:roomId',
     CATEGORY: 'session:category',
-    PARTNER:  'session:partner',
+    PARTNER: 'session:partner',
 } as const;
 
 class WebSocketService {
     public socket: AppSocket | null = null;
+
     private isConnected = false;
     private isAuthenticated = false;
     private isReconnecting = false;
 
-    // ─── Persistência de sessão ───────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // Persistência de sessão
+    // ─────────────────────────────────────────────────────────────
 
-    async saveSession(roomId: string, category: string, partnerUsername: string): Promise<void> {
-        await asyncStorage.multiSet([
-            [STORAGE_KEYS.ROOM_ID,  roomId],
+    async saveSession(
+        roomId: string,
+        category: string,
+        partnerUsername: string
+    ): Promise<void> {
+        await AsyncStorage.multiSet([
+            [STORAGE_KEYS.ROOM_ID, roomId],
             [STORAGE_KEYS.CATEGORY, category],
-            [STORAGE_KEYS.PARTNER,  partnerUsername],
+            [STORAGE_KEYS.PARTNER, partnerUsername],
         ]);
     }
 
     async clearSession(): Promise<void> {
-        await asyncStorage.multiRemove([
+        await AsyncStorage.multiRemove([
             STORAGE_KEYS.ROOM_ID,
             STORAGE_KEYS.CATEGORY,
             STORAGE_KEYS.PARTNER,
         ]);
     }
 
-    async getSession(): Promise<{ roomId: string | null; category: string | null; partner: string | null }> {
-        const pairs = await asyncStorage.multiGet([
+    async getSession(): Promise<{
+        roomId: string | null;
+        category: string | null;
+        partner: string | null;
+    }> {
+        const pairs = await AsyncStorage.multiGet([
             STORAGE_KEYS.ROOM_ID,
             STORAGE_KEYS.CATEGORY,
             STORAGE_KEYS.PARTNER,
         ]);
+
         return {
-            roomId:   pairs[0][1],
+            roomId: pairs[0][1],
             category: pairs[1][1],
-            partner:  pairs[2][1],
+            partner: pairs[2][1],
         };
     }
 
-    // ─── Conexão principal ────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // Conexão
+    // ─────────────────────────────────────────────────────────────
 
     async connect(): Promise<void> {
-        const token = await asyncStorage.getItem(STORAGE_KEYS.TOKEN);
+        if (this.socket?.connected) {
+            return;
+        }
+
+        const token = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
 
         this.socket = io(API_CONFIG.SOCKET_URL, {
             auth: { token },
@@ -72,23 +98,35 @@ class WebSocketService {
         this.setupLifecycleListeners(token);
 
         return new Promise((resolve, reject) => {
-            this.socket!.once('connect', () => resolve());
-            this.socket!.once('auth_error', (err) => reject(new Error(err.message)));
-            this.socket!.once('connect_error', (err) => reject(err));
+            this.socket?.once('connect', () => {
+                resolve();
+            });
+
+            this.socket?.once('connect_error', (error) => {
+                reject(error);
+            });
+
+            this.socket?.once('auth_error', (error) => {
+                reject(new Error(error.message));
+            });
         });
     }
 
-    // ─── Listeners de lifecycle (reconnect incluído) ──────────────────────────
-
     private setupLifecycleListeners(initialToken: string | null): void {
-        const socket = this.socket!;
+        const socket = this.socket;
+
+        if (!socket) return;
 
         socket.on('connect', async () => {
             this.isConnected = true;
             this.isReconnecting = false;
+
             console.log('WebSocket connected:', socket.id);
 
-            const token = await asyncStorage.getItem(STORAGE_KEYS.TOKEN) ?? initialToken;
+            const token =
+                (await AsyncStorage.getItem(STORAGE_KEYS.TOKEN)) ??
+                initialToken;
+
             if (token) {
                 socket.emit('authenticate', { token });
             }
@@ -96,86 +134,186 @@ class WebSocketService {
 
         socket.on('authenticated', async (data) => {
             this.isAuthenticated = true;
-            console.log('Authenticated, userId:', data.userId);
 
-            // Rejoin automático da sala após reconnect
+            console.log('Socket authenticated:', data.userId);
+
             const { roomId } = await this.getSession();
+
             if (roomId) {
-                console.log('Rejoining room after reconnect:', roomId);
-                socket.emit('join-room', { roomId });
+                console.log('Rejoining room:', roomId);
+
+                await this.joinRoom(roomId);
             }
         });
 
         socket.on('auth_error', (error) => {
             this.isAuthenticated = false;
-            console.warn('Auth error:', error.message);
+
+            console.warn('Socket auth error:', error.message);
         });
 
         socket.on('disconnect', (reason) => {
             this.isConnected = false;
             this.isAuthenticated = false;
-            console.log('WebSocket disconnected, reason:', reason);
-        });
 
-        socket.on('reconnect', (attempt) => {
-            console.log('Reconnected after', attempt, 'attempt(s)');
-            this.isReconnecting = false;
+            console.log('Socket disconnected:', reason);
         });
 
         socket.on('reconnect_attempt', (attempt) => {
             this.isReconnecting = true;
+
             console.log('Reconnect attempt:', attempt);
         });
 
-        socket.on('connect_error', (error) => {
-            console.warn('Connection error:', error.message);
+        socket.on('reconnect', (attempt) => {
+            this.isReconnecting = false;
+
+            console.log('Reconnected after attempts:', attempt);
         });
 
-        // Responde ao heartbeat do servidor
+        socket.on('connect_error', (error) => {
+            console.warn('Socket connection error:', error.message);
+        });
+
+        // Heartbeat
         socket.on('ping', () => {
             socket.emit('pong');
         });
     }
 
-    // ─── Desconexão ───────────────────────────────────────────────────────────
-
     disconnect(): void {
         if (this.socket) {
             this.socket.disconnect();
             this.socket = null;
-            this.isConnected = false;
-            this.isAuthenticated = false;
         }
+
+        this.isConnected = false;
+        this.isAuthenticated = false;
+        this.isReconnecting = false;
     }
 
-    // Alias mantido para compatibilidade com useAuth.tsx
     disconnected(): void {
         this.disconnect();
     }
 
-    // ─── Ações ────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // ACK Core
+    // ─────────────────────────────────────────────────────────────
 
-    joinRoom(roomId: string): void {
-        this.socket?.emit('join-room', { roomId });
+    private emitWithAck<T = unknown>(
+        event: string,
+        payload?: unknown,
+        timeout = 5000
+    ): Promise<AckResponse<T>> {
+        return new Promise((resolve) => {
+            if (!this.socket || !this.connected) {
+                resolve({
+                    success: false,
+                    error: 'Socket not connected',
+                });
+
+                return;
+            }
+
+            const timer = setTimeout(() => {
+                resolve({
+                    success: false,
+                    error: 'ACK timeout',
+                });
+            }, timeout);
+
+            this.socket.emit(
+                event as any,
+                payload,
+                (response: AckResponse<T>) => {
+                    clearTimeout(timer);
+
+                    resolve(response);
+                }
+            );
+        });
     }
 
-    leaveRoom(roomId: string): void {
-        this.socket?.emit('leave-room', { roomId });
+    private async emitWithRetry<T = unknown>(
+        event: string,
+        payload?: unknown,
+        retries = 3
+    ): Promise<AckResponse<T>> {
+        let attempt = 0;
+
+        while (attempt < retries) {
+            const response = await this.emitWithAck<T>(
+                event,
+                payload
+            );
+
+            if (response.success) {
+                return response;
+            }
+
+            attempt++;
+
+            console.warn(
+                `[Socket Retry] ${event} attempt ${attempt}`,
+                response.error
+            );
+
+            await new Promise((resolve) =>
+                setTimeout(resolve, 1000 * attempt)
+            );
+        }
+
+        return {
+            success: false,
+            error: 'Max retries exceeded',
+        };
     }
 
-    sendMessage(roomId: string, message: string): void {
-        this.socket?.emit('send-message', { roomId, message });
+    // ─────────────────────────────────────────────────────────────
+    // Ações críticas com ACK
+    // ─────────────────────────────────────────────────────────────
+
+    async joinRoom(roomId: string) {
+        return this.emitWithRetry(
+            'join-room',
+            { roomId }
+        );
     }
 
-    findMatch(category: string): void {
-        this.socket?.emit('find-match', { category });
+    async leaveRoom(roomId: string) {
+        return this.emitWithRetry(
+            'leave-room',
+            { roomId }
+        );
     }
 
-    cancelMatch(): void {
-        this.socket?.emit('cancel-matching');
+    async sendMessage(roomId: string, message: string) {
+        return this.emitWithRetry(
+            'send-message',
+            { roomId, message }
+        );
     }
 
-    // ─── Listeners de eventos ─────────────────────────────────────────────────
+    async findMatch(category: string) {
+        return this.emitWithRetry(
+            'find-match',
+            { category }
+        );
+    }
+
+    async cancelMatch() {
+        return this.emitWithRetry(
+            'cancel-matching'
+        );
+    }
+
+    requestSessionState(): void {
+        this.socket?.emit('get-session-state');
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Eventos
+    // ─────────────────────────────────────────────────────────────
 
     onMessage(callback: (data: MessageDTO) => void): void {
         this.socket?.on('new-message', callback);
@@ -185,43 +323,81 @@ class WebSocketService {
         this.socket?.on('match-found', callback);
     }
 
-    onUserLeft(callback: (data: { roomId: string; message: string }) => void): void {
+    onUserLeft(
+        callback: (data: {
+            roomId: string;
+            message: string;
+        }) => void
+    ): void {
         this.socket?.on('partner_left', callback);
     }
 
-    onPartnerDisconnected(callback: (data: { message: string }) => void): void {
-        this.socket?.on('partner_disconnected', callback);
+    onPartnerDisconnected(
+        callback: (data: {
+            message: string;
+        }) => void
+    ): void {
+        this.socket?.on(
+            'partner_disconnected',
+            callback
+        );
     }
 
-    onQueueJoined(callback: (data: { category: string; position: number }) => void): void {
+    onQueueJoined(
+        callback: (data: {
+            category: string;
+            position: number;
+        }) => void
+    ): void {
         this.socket?.on('queue-joined', callback);
     }
 
-    onQueueLeft(callback: (data: { success: boolean }) => void): void {
+    onQueueLeft(
+        callback: (data: {
+            success: boolean;
+        }) => void
+    ): void {
         this.socket?.on('queue-left', callback);
     }
 
-    onQueueTimeout(callback: (data: { message: string; category: string }) => void): void {
+    onQueueTimeout(
+        callback: (data: {
+            message: string;
+            category: string;
+        }) => void
+    ): void {
         this.socket?.on('queue-timeout', callback);
     }
 
-    onSessionState(callback: (data: { inQueue: boolean; category: string | null; currentRoom: string | null }) => void): void {
+    onSessionState(
+        callback: (data: {
+            inQueue: boolean;
+            category: string | null;
+            currentRoom: string | null;
+        }) => void
+    ): void {
         this.socket?.on('session-state', callback);
-    }
-
-    requestSessionState(): void {
-        this.socket?.emit('get-session-state');
     }
 
     removeAllListeners(): void {
         this.socket?.removeAllListeners();
     }
 
-    // ─── Getters de estado ────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // Getters
+    // ─────────────────────────────────────────────────────────────
 
-    get connected(): boolean        { return this.isConnected; }
-    get authenticated(): boolean    { return this.isAuthenticated; }
-    get reconnecting(): boolean     { return this.isReconnecting; }
+    get connected(): boolean {
+        return this.isConnected;
+    }
+
+    get authenticated(): boolean {
+        return this.isAuthenticated;
+    }
+
+    get reconnecting(): boolean {
+        return this.isReconnecting;
+    }
 }
 
 export const wsService = new WebSocketService();
