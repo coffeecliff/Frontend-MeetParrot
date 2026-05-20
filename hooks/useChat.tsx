@@ -1,17 +1,17 @@
-import { useCallback, useEffect, useState } from "react";
-import { ChatMessage } from "../constants/types";
-import { wsService } from "../services/websocket";
+import { useCallback, useEffect, useState } from 'react';
+import { ChatMessage } from '../constants/types';
+import { MessageDTO, MatchDTO, QueueStatusDTO } from '../constants/api-types';
+import { wsService } from '../services/websocket';
 
 export function useChat(category: string) {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [isConnected, setIsConnected] = useState(false);
     const [isMatching, setIsMatching] = useState(true);
+    const [isReconnecting, setIsReconnecting] = useState(false);
     const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
     const [partnerName, setPartnerName] = useState<string>('Procurando...');
 
-    const handleNewMessage = useCallback((data: any) => {
-        console.log('New message received:', data);
-
+    const handleNewMessage = useCallback((data: MessageDTO) => {
         const newMessage: ChatMessage = {
             id: data.id,
             text: data.message,
@@ -19,27 +19,36 @@ export function useChat(category: string) {
             timestamp: new Date(data.timestamp),
             userName: data.username || 'Desconhecido',
         };
-
         setMessages(prev => [...prev, newMessage]);
     }, []);
 
-    const handleMatchFound = useCallback((data: any) => {
+    const handleMatchFound = useCallback((data: MatchDTO) => {
         console.log('Match found:', data);
+
+        const partner = data.partner?.username || 'Stranger';
 
         setCurrentRoomId(data.roomId);
         setIsConnected(true);
+        setIsReconnecting(false);
+        setMessages([]);
+        setPartnerName(partner);
 
-        // pequeno delay pra splash aparecer suave
+        // Persiste a sessão para sobreviver a reconnects
+        wsService.saveSession(data.roomId, data.category, partner);
+
         setTimeout(() => {
             setIsMatching(false);
         }, 800);
-        setMessages([]);
-        setPartnerName(data.partner?.username || 'Usuário');
+
         wsService.joinRoom(data.roomId);
     }, []);
 
     const handleUserLeft = useCallback(() => {
-        console.log('User left the chat');
+        console.log('Partner left the chat');
+
+        // Limpa sessão persistida pois a sala encerrou
+        wsService.clearSession();
+
         setIsConnected(false);
         setCurrentRoomId(null);
         setPartnerName('Procurando...');
@@ -48,12 +57,50 @@ export function useChat(category: string) {
         setTimeout(() => {
             wsService.findMatch(category);
         }, 1000);
-
     }, [category]);
 
-    const handleQueueStatus = useCallback((data: any) => {
+    const handleQueueStatus = useCallback((data: QueueStatusDTO) => {
         console.log('Queue status:', data);
         setIsMatching(true);
+    }, []);
+
+    const handleQueueJoined = useCallback((data: { category: string; position: number }) => {
+        console.log('Queue joined confirmed:', data);
+        setIsMatching(true);
+    }, []);
+
+    const handleQueueTimeout = useCallback((data: { message: string; category: string }) => {
+        console.warn('Queue timeout:', data.message);
+        // Tenta novamente automaticamente após timeout
+        setIsMatching(true);
+        setTimeout(() => {
+            wsService.findMatch(category);
+        }, 2000);
+    }, [category]);
+
+    const handleSessionState = useCallback((data: { inQueue: boolean; category: string | null; currentRoom: string | null }) => {
+        console.log('Session state from server:', data);
+        // Se o servidor diz que não há sala ativa, limpa o estado local
+        if (!data.currentRoom) {
+            wsService.clearSession();
+            setCurrentRoomId(null);
+            setIsConnected(false);
+            if (!data.inQueue) {
+                setIsMatching(true);
+                wsService.findMatch(category);
+            }
+        }
+    }, [category]);
+
+    // Listener de reconnect para atualizar estado visual
+    const handleReconnectAttempt = useCallback(() => {
+        setIsReconnecting(true);
+    }, []);
+
+    const handleReconnected = useCallback(() => {
+        setIsReconnecting(false);
+        // Solicita estado real ao servidor após reconexão para sincronizar
+        wsService.requestSessionState();
     }, []);
 
     useEffect(() => {
@@ -62,19 +109,21 @@ export function useChat(category: string) {
                 if (!wsService.connected) {
                     await wsService.connect();
                 }
+
                 wsService.onMessage(handleNewMessage);
                 wsService.onMatchingFound(handleMatchFound);
                 wsService.onUserLeft(handleUserLeft);
+                wsService.onPartnerDisconnected(handleUserLeft);
+                wsService.onQueueJoined(handleQueueJoined);
+                wsService.onQueueTimeout(handleQueueTimeout);
+                wsService.onSessionState(handleSessionState);
 
                 wsService.socket?.on('queue-status', handleQueueStatus);
+                wsService.socket?.on('reconnect_attempt', handleReconnectAttempt);
+                wsService.socket?.on('reconnect', handleReconnected);
 
-                wsService.socket?.on('partner-left', handleUserLeft);
-
-                wsService.socket?.on('partner-disconnected', handleUserLeft);
-
-                console.log('Starting automatic match search for:', category);
+                console.log('Starting match search for category:', category);
                 wsService.findMatch(category);
-
                 setIsMatching(true);
             } catch (error) {
                 console.error('WebSocket connection error:', error);
@@ -86,7 +135,7 @@ export function useChat(category: string) {
         return () => {
             wsService.removeAllListeners();
         };
-    }, [category, handleNewMessage, handleMatchFound, handleUserLeft, handleQueueStatus]);
+    }, [category, handleNewMessage, handleMatchFound, handleUserLeft, handleQueueStatus, handleQueueJoined, handleQueueTimeout, handleSessionState, handleReconnectAttempt, handleReconnected]);
 
     const sendMessage = async (text: string) => {
         if (!text.trim() || !currentRoomId) return;
@@ -100,6 +149,7 @@ export function useChat(category: string) {
         };
 
         setMessages(prev => [...prev, newMessage]);
+
         try {
             wsService.sendMessage(currentRoomId, text.trim());
         } catch (error) {
@@ -111,6 +161,8 @@ export function useChat(category: string) {
         if (currentRoomId) {
             wsService.leaveRoom(currentRoomId);
         }
+
+        wsService.clearSession();
 
         setIsConnected(false);
         setIsMatching(true);
@@ -138,6 +190,7 @@ export function useChat(category: string) {
         messages,
         isConnected,
         isMatching,
+        isReconnecting,
         partnerName,
         sendMessage,
         findNewPartner,

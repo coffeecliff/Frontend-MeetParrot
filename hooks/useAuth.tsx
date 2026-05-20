@@ -25,8 +25,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const checkAuthStatus = async () => {
     try {
       const response = await apiService.getProfile();
-      setUser(response.user);
-      await wsService.connect();
+      if (response?.user) {
+        setUser(response.user);
+        await wsService.connect();
+      }
     } catch (error) {
       console.log('Not authenticated');
     } finally {
@@ -61,10 +63,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     try {
       await apiService.Logout();
-      wsService.disconnected();
+      wsService.disconnect();
+      await wsService.clearSession();
       setUser(null);
     } catch (error) {
       console.error('Logout error:', error);
+      // Garante limpeza mesmo se a API falhar
+      wsService.disconnect();
+      await wsService.clearSession();
+      setUser(null);
     }
   };
 
