@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ChatMessage } from '../constants/types';
 
@@ -6,20 +6,19 @@ import {
     MessageDTO,
     MatchDTO,
     QueueStatusDTO,
-} from '../constants/api-types';
+} from '../constants/api_types';
 
 import { wsService } from '../services/websocket';
 
-type MessageStatus =
-    | 'sending'
-    | 'sent'
-    | 'failed';
+
+type ChatMessageWithStatus =
+    ChatMessage & {
+        status?: 'sending' | 'sent' | 'failed'
+    };
 
 export function useChat(category: string) {
     const [messages, setMessages] = useState<
-        (ChatMessage & {
-            status?: MessageStatus;
-        })[]
+        ChatMessageWithStatus[]
     >([]);
 
     const [isConnected, setIsConnected] =
@@ -37,19 +36,22 @@ export function useChat(category: string) {
     const [partnerName, setPartnerName] =
         useState<string>('Procurando...');
 
+    const initializedRef = useRef(false);
+
     // ─────────────────────────────────────────────────────────────
     // Eventos
     // ─────────────────────────────────────────────────────────────
 
     const handleNewMessage = useCallback(
         (data: MessageDTO) => {
-            const newMessage: ChatMessage = {
+            const newMessage: ChatMessageWithStatus = {
                 id: data.id,
                 text: data.message,
                 isUser: false,
                 timestamp: new Date(data.timestamp),
-                userName:
+                username:
                     data.username || 'Desconhecido',
+                status: 'sent',
             };
 
             setMessages((prev) => [
@@ -69,9 +71,13 @@ export function useChat(category: string) {
                 'Stranger';
 
             setCurrentRoomId(data.roomId);
+
             setIsConnected(true);
+
             setIsReconnecting(false);
+
             setMessages([]);
+
             setPartnerName(partner);
 
             await wsService.saveSession(
@@ -80,41 +86,65 @@ export function useChat(category: string) {
                 partner
             );
 
-            const response =
+            const joinResponse =
                 await wsService.joinRoom(
                     data.roomId
                 );
 
-            if (!response.success) {
+            if (!joinResponse.success) {
                 console.error(
                     'Failed to join room:',
-                    response.error
+                    joinResponse.error
                 );
+
+                await wsService.clearSession();
+
+                setCurrentRoomId(null);
+
+                setIsConnected(false);
 
                 return;
             }
 
-            setTimeout(() => {
-                setIsMatching(false);
-            }, 800);
+            setIsMatching(false);
         },
         []
     );
 
-    const handleUserLeft = useCallback(() => {
-        console.log('Partner left');
+    const handleUserLeft = useCallback(
+        async () => {
+            console.log('Partner left');
 
-        wsService.clearSession();
+            await wsService.clearSession();
 
-        setIsConnected(false);
-        setCurrentRoomId(null);
-        setPartnerName('Procurando...');
-        setIsMatching(true);
+            setIsConnected(false);
 
-        setTimeout(async () => {
-            await wsService.findMatch(category);
-        }, 1000);
-    }, [category]);
+            setCurrentRoomId(null);
+
+            setPartnerName('Procurando...');
+
+            setMessages([]);
+
+            setIsMatching(true);
+
+            setTimeout(async () => {
+                const response =
+                    await wsService.findMatch(
+                        category
+                    );
+
+                if (!response.success) {
+                    console.error(
+                        'Rematch failed:',
+                        response.error
+                    );
+
+                    setIsMatching(false);
+                }
+            }, 1000);
+        },
+        [category]
+    );
 
     const handleQueueStatus = useCallback(
         (data: QueueStatusDTO) => {
@@ -153,17 +183,29 @@ export function useChat(category: string) {
                 data.message
             );
 
+            setIsMatching(true);
+
             setTimeout(async () => {
-                await wsService.findMatch(
-                    category
-                );
+                const response =
+                    await wsService.findMatch(
+                        category
+                    );
+
+                if (!response.success) {
+                    console.error(
+                        'Retry queue failed:',
+                        response.error
+                    );
+
+                    setIsMatching(false);
+                }
             }, 2000);
         },
         [category]
     );
 
     const handleSessionState = useCallback(
-        (data: {
+        async (data: {
             inQueue: boolean;
             category: string | null;
             currentRoom: string | null;
@@ -174,17 +216,28 @@ export function useChat(category: string) {
             );
 
             if (!data.currentRoom) {
-                wsService.clearSession();
+                await wsService.clearSession();
 
                 setCurrentRoomId(null);
+
                 setIsConnected(false);
 
                 if (!data.inQueue) {
                     setIsMatching(true);
 
-                    wsService.findMatch(
-                        category
-                    );
+                    const response =
+                        await wsService.findMatch(
+                            category
+                        );
+
+                    if (!response.success) {
+                        console.error(
+                            'Session recovery failed:',
+                            response.error
+                        );
+
+                        setIsMatching(false);
+                    }
                 }
             }
         },
@@ -197,10 +250,10 @@ export function useChat(category: string) {
         }, []);
 
     const handleReconnected =
-        useCallback(() => {
+        useCallback(async () => {
             setIsReconnecting(false);
 
-            wsService.requestSessionState();
+            await wsService.requestSessionState();
         }, []);
 
     // ─────────────────────────────────────────────────────────────
@@ -208,6 +261,12 @@ export function useChat(category: string) {
     // ─────────────────────────────────────────────────────────────
 
     useEffect(() => {
+        if (initializedRef.current) {
+            return;
+        }
+
+        initializedRef.current = true;
+
         const initialize =
             async (): Promise<void> => {
                 try {
@@ -245,20 +304,41 @@ export function useChat(category: string) {
                         handleSessionState
                     );
 
-                    wsService.socket?.on(
-                        'queue-status',
-                        handleQueueStatus
-                    );
+                    if (
+                        !wsService.authenticated
+                    ) {
+                        return;
+                    }
 
-                    wsService.socket?.on(
-                        'reconnect_attempt',
-                        handleReconnectAttempt
-                    );
+                    const session =
+                        await wsService.getSession();
 
-                    wsService.socket?.on(
-                        'reconnect',
-                        handleReconnected
-                    );
+                    if (
+                        session.roomId
+                    ) {
+                        console.log(
+                            'Existing session restored'
+                        );
+
+                        setCurrentRoomId(
+                            session.roomId
+                        );
+
+                        setPartnerName(
+                            session.partner ||
+                            'Stranger'
+                        );
+
+                        setIsConnected(
+                            true
+                        );
+
+                        setIsMatching(
+                            false
+                        );
+
+                        return;
+                    }
 
                     const response =
                         await wsService.findMatch(
@@ -267,7 +347,7 @@ export function useChat(category: string) {
 
                     if (!response.success) {
                         console.error(
-                            'Failed to join queue:',
+                            'Find match failed:',
                             response.error
                         );
 
@@ -282,13 +362,16 @@ export function useChat(category: string) {
                         'WebSocket init error:',
                         error
                     );
+
+                    setIsMatching(false);
                 }
             };
 
         initialize();
 
         return () => {
-            wsService.removeAllListeners();
+            initializedRef.current =
+                false;
         };
     }, [
         category,
@@ -312,22 +395,22 @@ export function useChat(category: string) {
     ) => {
         if (
             !text.trim() ||
-            !currentRoomId
+            !currentRoomId ||
+            !wsService.connected
         ) {
             return;
         }
 
         const tempId =
-            Date.now().toString();
+            crypto.randomUUID();
 
-        const optimisticMessage: ChatMessage & {
-            status?: MessageStatus;
-        } = {
+        const optimisticMessage: ChatMessageWithStatus =
+        {
             id: tempId,
             text: text.trim(),
             isUser: true,
             timestamp: new Date(),
-            userName: 'Você',
+            username: 'Você',
             status: 'sending',
         };
 
@@ -339,7 +422,7 @@ export function useChat(category: string) {
         const response =
             await wsService.sendMessage(
                 currentRoomId,
-                text.trim()
+                text.trim(),
             );
 
         setMessages((prev) =>
@@ -350,9 +433,10 @@ export function useChat(category: string) {
 
                 return {
                     ...msg,
-                    status: response.success
-                        ? 'sent'
-                        : 'failed',
+                    status:
+                        response.success
+                            ? 'sent'
+                            : 'failed',
                 };
             })
         );
@@ -363,6 +447,66 @@ export function useChat(category: string) {
                 response.error
             );
         }
+    };
+
+    // ─────────────────────────────────────────────────────────────
+    // Retry manual
+    // ─────────────────────────────────────────────────────────────
+
+    const retryMessage = async (
+        messageId: string
+    ) => {
+        const target =
+            messages.find(
+                (msg) =>
+                    msg.id === messageId
+            );
+
+        if (
+            !target ||
+            !currentRoomId
+        ) {
+            return;
+        }
+
+        setMessages((prev) =>
+            prev.map((msg) => {
+                if (
+                    msg.id !== messageId
+                ) {
+                    return msg;
+                }
+
+                return {
+                    ...msg,
+                    status: 'sending',
+                };
+            })
+        );
+
+        const response =
+            await wsService.sendMessage(
+                currentRoomId,
+                target.text
+            );
+
+        setMessages((prev) =>
+            prev.map((msg) => {
+                if (
+                    msg.id !== messageId
+                ) {
+                    return msg;
+                }
+
+                return {
+                    ...msg,
+                    status:
+                        response.success
+                            ? 'sent'
+                            : 'failed',
+                };
+            })
+        );
     };
 
     // ─────────────────────────────────────────────────────────────
@@ -380,13 +524,17 @@ export function useChat(category: string) {
 
                 await wsService.clearSession();
 
-                setIsConnected(false);
-                setIsMatching(true);
                 setMessages([]);
+
                 setCurrentRoomId(null);
+
                 setPartnerName(
                     'Procurando...'
                 );
+
+                setIsConnected(false);
+
+                setIsMatching(true);
 
                 const response =
                     await wsService.findMatch(
@@ -395,7 +543,7 @@ export function useChat(category: string) {
 
                 if (!response.success) {
                     console.error(
-                        'Find match failed:',
+                        'Find partner failed:',
                         response.error
                     );
 
@@ -403,25 +551,11 @@ export function useChat(category: string) {
                 }
             } catch (error) {
                 console.error(
-                    'Find new partner error:',
+                    'Find partner error:',
                     error
                 );
             }
         };
-
-    // ─────────────────────────────────────────────────────────────
-    // Cleanup
-    // ─────────────────────────────────────────────────────────────
-
-    useEffect(() => {
-        return () => {
-            if (currentRoomId) {
-                wsService.leaveRoom(
-                    currentRoomId
-                );
-            }
-        };
-    }, [currentRoomId]);
 
     return {
         messages,
@@ -430,6 +564,8 @@ export function useChat(category: string) {
         isReconnecting,
         partnerName,
         sendMessage,
+        retryMessage,
         findNewPartner,
     };
 }
+

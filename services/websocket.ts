@@ -1,4 +1,3 @@
-
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { io, Socket } from 'socket.io-client';
 
@@ -9,11 +8,14 @@ import {
     ClientToServerEvents,
     MessageDTO,
     MatchDTO,
-} from '../constants/api-types';
+} from '../constants/api_types';
 
-type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
+type AppSocket = Socket<
+    ServerToClientEvents,
+    ClientToServerEvents
+>;
 
-type AckResponse<T = unknown> = {
+export type AckResponse<T = unknown> = {
     success: boolean;
     error?: string;
     data?: T;
@@ -79,15 +81,17 @@ class WebSocketService {
     // Conexão
     // ─────────────────────────────────────────────────────────────
 
+
     async connect(): Promise<void> {
         if (this.socket?.connected) {
             return;
         }
 
-        const token = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
+        const token = await AsyncStorage.getItem(
+            STORAGE_KEYS.TOKEN
+        );
 
         this.socket = io(API_CONFIG.SOCKET_URL, {
-            auth: { token },
             transports: ['websocket'],
             reconnection: true,
             reconnectionAttempts: 10,
@@ -98,22 +102,64 @@ class WebSocketService {
         this.setupLifecycleListeners(token);
 
         return new Promise((resolve, reject) => {
-            this.socket?.once('connect', () => {
+            if (!this.socket) {
+                reject(
+                    new Error('Socket not initialized')
+                );
+
+                return;
+            }
+
+            this.socket.once('connect', async () => {
+                console.log(
+                    '✅ Socket connected'
+                );
+
+                this.isConnected = true;
+
+                if (!token) {
+                    reject(
+                        new Error('Token not found')
+                    );
+
+                    return;
+                }
+
+                const authResponse =
+                    await this.authenticate(
+                        token
+                    );
+
+                if (!authResponse.success) {
+                    reject(
+                        new Error(
+                            authResponse.error
+                        )
+                    );
+
+                    return;
+                }
+
+                this.isAuthenticated = true;
+
                 resolve();
             });
 
-            this.socket?.once('connect_error', (error) => {
-                reject(error);
-            });
-
-            this.socket?.once('auth_error', (error) => {
-                reject(new Error(error.message));
-            });
+            this.socket.once(
+                'connect_error',
+                (error) => {
+                    reject(error);
+                }
+            );
         });
     }
 
-    private setupLifecycleListeners(initialToken: string | null): void {
-        const socket = this.socket;
+
+
+    private setupLifecycleListeners(
+        initialToken: string | null
+    ): void {
+        const socket = this.socket as Socket<any, any> | null;
 
         if (!socket) return;
 
@@ -121,65 +167,104 @@ class WebSocketService {
             this.isConnected = true;
             this.isReconnecting = false;
 
-            console.log('WebSocket connected:', socket.id);
+            console.log(
+                'WebSocket connected:',
+                socket.id
+            );
 
             const token =
-                (await AsyncStorage.getItem(STORAGE_KEYS.TOKEN)) ??
-                initialToken;
+                (await AsyncStorage.getItem(
+                    STORAGE_KEYS.TOKEN
+                )) ?? initialToken;
 
-            if (token) {
-                socket.emit('authenticate', { token });
-            }
+
         });
 
-        socket.on('authenticated', async (data) => {
-            this.isAuthenticated = true;
+        socket.on(
+            'authenticated',
+            async (data: { userId: string }) => {
+                this.isAuthenticated = true;
 
-            console.log('Socket authenticated:', data.userId);
+                console.log(
+                    'Socket authenticated:',
+                    data.userId
+                );
 
-            const { roomId } = await this.getSession();
+                const { roomId } =
+                    await this.getSession();
 
-            if (roomId) {
-                console.log('Rejoining room:', roomId);
+                if (roomId) {
+                    console.log(
+                        'Rejoining room:',
+                        roomId
+                    );
 
-                await this.joinRoom(roomId);
+                    const response =
+                        await this.joinRoom(roomId);
+
+                    if (!response.success) {
+                        console.warn(
+                            'Failed to rejoin room:',
+                            response.error
+                        );
+
+                        await this.clearSession();
+                    }
+                }
             }
-        });
+        );
 
-        socket.on('auth_error', (error) => {
+        socket.on('auth_error', (error: { message?: string }) => {
             this.isAuthenticated = false;
 
-            console.warn('Socket auth error:', error.message);
+            console.warn(
+                'Socket auth error:',
+                error.message
+            );
         });
 
         socket.on('disconnect', (reason) => {
             this.isConnected = false;
             this.isAuthenticated = false;
 
-            console.log('Socket disconnected:', reason);
+            console.log(
+                'Socket disconnected:',
+                reason
+            );
         });
 
-        socket.on('reconnect_attempt', (attempt) => {
-            this.isReconnecting = true;
+        socket.on(
+            'reconnect_attempt',
+            (attempt: number) => {
+                this.isReconnecting = true;
 
-            console.log('Reconnect attempt:', attempt);
-        });
+                console.log(
+                    'Reconnect attempt:',
+                    attempt
+                );
+            }
+        );
 
-        socket.on('reconnect', (attempt) => {
+        socket.on('reconnect', (attempt: number) => {
             this.isReconnecting = false;
 
-            console.log('Reconnected after attempts:', attempt);
+            console.log(
+                'Reconnected after attempts:',
+                attempt
+            );
         });
 
         socket.on('connect_error', (error) => {
-            console.warn('Socket connection error:', error.message);
-        });
-
-        // Heartbeat
-        socket.on('ping', () => {
-            socket.emit('pong');
+            console.warn(
+                'Socket connection error:',
+                error.message
+            );
         });
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // Desconexão
+    // ─────────────────────────────────────────────────────────────
 
     disconnect(): void {
         if (this.socket) {
@@ -206,7 +291,7 @@ class WebSocketService {
         timeout = 5000
     ): Promise<AckResponse<T>> {
         return new Promise((resolve) => {
-            if (!this.socket || !this.connected) {
+            if (!this.socket || !this.socket.connected) {
                 resolve({
                     success: false,
                     error: 'Socket not connected',
@@ -215,8 +300,22 @@ class WebSocketService {
                 return;
             }
 
+            let resolved = false;
+
+            const finish = (
+                response: AckResponse<T>
+            ) => {
+                if (resolved) return;
+
+                resolved = true;
+
+                clearTimeout(timer);
+
+                resolve(response);
+            };
+
             const timer = setTimeout(() => {
-                resolve({
+                finish({
                     success: false,
                     error: 'ACK timeout',
                 });
@@ -226,9 +325,7 @@ class WebSocketService {
                 event as any,
                 payload,
                 (response: AckResponse<T>) => {
-                    clearTimeout(timer);
-
-                    resolve(response);
+                    finish(response);
                 }
             );
         });
@@ -242,10 +339,11 @@ class WebSocketService {
         let attempt = 0;
 
         while (attempt < retries) {
-            const response = await this.emitWithAck<T>(
-                event,
-                payload
-            );
+            const response =
+                await this.emitWithAck<T>(
+                    event,
+                    payload
+                );
 
             if (response.success) {
                 return response;
@@ -259,7 +357,10 @@ class WebSocketService {
             );
 
             await new Promise((resolve) =>
-                setTimeout(resolve, 1000 * attempt)
+                setTimeout(
+                    resolve,
+                    1000 * attempt
+                )
             );
         }
 
@@ -270,8 +371,15 @@ class WebSocketService {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Ações críticas com ACK
+    // Eventos críticos com ACK
     // ─────────────────────────────────────────────────────────────
+
+    async authenticate(token: string) {
+        return this.emitWithRetry(
+            'authenticate',
+            { token }
+        );
+    }
 
     async joinRoom(roomId: string) {
         return this.emitWithRetry(
@@ -287,10 +395,16 @@ class WebSocketService {
         );
     }
 
-    async sendMessage(roomId: string, message: string) {
+    async sendMessage(
+        roomId: string,
+        message: string,
+    ) {
         return this.emitWithRetry(
             'send-message',
-            { roomId, message }
+            {
+                roomId,
+                message,
+            }
         );
     }
 
@@ -307,20 +421,32 @@ class WebSocketService {
         );
     }
 
-    requestSessionState(): void {
-        this.socket?.emit('get-session-state');
+    async requestSessionState() {
+        return this.emitWithRetry(
+            'get-session-state'
+        );
     }
 
     // ─────────────────────────────────────────────────────────────
     // Eventos
     // ─────────────────────────────────────────────────────────────
 
-    onMessage(callback: (data: MessageDTO) => void): void {
-        this.socket?.on('new-message', callback);
+    onMessage(
+        callback: (data: MessageDTO) => void
+    ): void {
+        this.socket?.on(
+            'new-message',
+            callback
+        );
     }
 
-    onMatchingFound(callback: (data: MatchDTO) => void): void {
-        this.socket?.on('match-found', callback);
+    onMatchingFound(
+        callback: (data: MatchDTO) => void
+    ): void {
+        this.socket?.on(
+            'match-found',
+            callback
+        );
     }
 
     onUserLeft(
@@ -329,7 +455,10 @@ class WebSocketService {
             message: string;
         }) => void
     ): void {
-        this.socket?.on('partner_left', callback);
+        this.socket?.on(
+            'partner_left',
+            callback
+        );
     }
 
     onPartnerDisconnected(
@@ -349,7 +478,10 @@ class WebSocketService {
             position: number;
         }) => void
     ): void {
-        this.socket?.on('queue-joined', callback);
+        this.socket?.on(
+            'queue-joined',
+            callback
+        );
     }
 
     onQueueLeft(
@@ -357,7 +489,10 @@ class WebSocketService {
             success: boolean;
         }) => void
     ): void {
-        this.socket?.on('queue-left', callback);
+        this.socket?.on(
+            'queue-left',
+            callback
+        );
     }
 
     onQueueTimeout(
@@ -366,7 +501,10 @@ class WebSocketService {
             category: string;
         }) => void
     ): void {
-        this.socket?.on('queue-timeout', callback);
+        this.socket?.on(
+            'queue-timeout',
+            callback
+        );
     }
 
     onSessionState(
@@ -376,12 +514,34 @@ class WebSocketService {
             currentRoom: string | null;
         }) => void
     ): void {
-        this.socket?.on('session-state', callback);
+        this.socket?.on(
+            'session-state',
+            callback
+        );
     }
 
-    removeAllListeners(): void {
-        this.socket?.removeAllListeners();
+
+    removeChatListeners(): void {
+        this.socket?.off('new-message');
+
+        this.socket?.off('match-found');
+
+        this.socket?.off('partner_left');
+
+        this.socket?.off(
+            'partner_disconnected'
+        );
+
+        this.socket?.off('queue-joined');
+
+        this.socket?.off('queue-left');
+
+        this.socket?.off('queue-timeout');
+
+        this.socket?.off('session-state');
     }
+
+
 
     // ─────────────────────────────────────────────────────────────
     // Getters
@@ -400,4 +560,5 @@ class WebSocketService {
     }
 }
 
-export const wsService = new WebSocketService();
+export const wsService =
+    new WebSocketService();

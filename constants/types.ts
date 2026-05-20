@@ -6,15 +6,28 @@ export interface User {
 
 export interface ChatMessage {
     id: string;
+
     text: string;
+
     isUser: boolean;
+
     timestamp: Date;
-    userName: string;
+
+    username: string;
+
+    status?:
+        | 'sending'
+        | 'sent'
+        | 'failed';
 }
 
 export interface ChatCategory {
     id: string;
+
     name: string;
+
     description: string;
+
     icon: string;
 }
+
