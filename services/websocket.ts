@@ -32,11 +32,13 @@ class WebSocketService {
     public socket: AppSocket | null = null;
 
     private isConnected = false;
+
     private isAuthenticated = false;
+
     private isReconnecting = false;
 
     // ─────────────────────────────────────────────────────────────
-    // Persistência de sessão
+    // SESSION
     // ─────────────────────────────────────────────────────────────
 
     async saveSession(
@@ -44,6 +46,15 @@ class WebSocketService {
         category: string,
         partnerUsername: string
     ): Promise<void> {
+        console.log(
+            '💾 Saving session:',
+            {
+                roomId,
+                category,
+                partnerUsername,
+            }
+        );
+
         await AsyncStorage.multiSet([
             [STORAGE_KEYS.ROOM_ID, roomId],
             [STORAGE_KEYS.CATEGORY, category],
@@ -52,6 +63,8 @@ class WebSocketService {
     }
 
     async clearSession(): Promise<void> {
+        console.log('🗑️ Clearing session');
+
         await AsyncStorage.multiRemove([
             STORAGE_KEYS.ROOM_ID,
             STORAGE_KEYS.CATEGORY,
@@ -70,141 +83,287 @@ class WebSocketService {
             STORAGE_KEYS.PARTNER,
         ]);
 
-        return {
+        const session = {
             roomId: pairs[0][1],
             category: pairs[1][1],
             partner: pairs[2][1],
         };
+
+        console.log(
+            '📦 Loaded session:',
+            session
+        );
+
+        return session;
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Conexão
+    // CONNECT
     // ─────────────────────────────────────────────────────────────
 
-
     async connect(): Promise<void> {
-        if (this.socket?.connected) {
-            return;
-        }
+        try {
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log('🔌 CONNECT START');
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-        const token = await AsyncStorage.getItem(
-            STORAGE_KEYS.TOKEN
-        );
-
-        this.socket = io(API_CONFIG.SOCKET_URL, {
-            transports: ['websocket'],
-            reconnection: true,
-            reconnectionAttempts: 10,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000,
-        });
-
-        this.setupLifecycleListeners(token);
-
-        return new Promise((resolve, reject) => {
-            if (!this.socket) {
-                reject(
-                    new Error('Socket not initialized')
+            if (this.socket?.connected) {
+                console.log(
+                    '⚠️ Socket already connected'
                 );
 
                 return;
             }
 
-            this.socket.once('connect', async () => {
-                console.log(
-                    '✅ Socket connected'
+            const token =
+                await AsyncStorage.getItem(
+                    STORAGE_KEYS.TOKEN
                 );
 
-                this.isConnected = true;
+            console.log(
+                '🔑 TOKEN EXISTS:',
+                !!token
+            );
 
-                if (!token) {
-                    reject(
-                        new Error('Token not found')
-                    );
+            this.socket = io(
+                API_CONFIG.SOCKET_URL,
+                {
+                    auth: {
+                        token,
+                    },
 
-                    return;
-                }
+                    transports: [
+                        'websocket',
+                    ],
 
-                const authResponse =
-                    await this.authenticate(
-                        token
-                    );
+                    reconnection: true,
 
-                if (!authResponse.success) {
-                    reject(
-                        new Error(
-                            authResponse.error
-                        )
-                    );
+                    reconnectionAttempts: 10,
 
-                    return;
-                }
+                    reconnectionDelay: 1000,
 
-                this.isAuthenticated = true;
-
-                resolve();
-            });
-
-            this.socket.once(
-                'connect_error',
-                (error) => {
-                    reject(error);
+                    reconnectionDelayMax: 5000,
                 }
             );
-        });
+
+            this.setupLifecycleListeners(
+                token
+            );
+
+            return new Promise(
+                (
+                    resolve,
+                    reject
+                ) => {
+                    if (!this.socket) {
+                        reject(
+                            new Error(
+                                'Socket not initialized'
+                            )
+                        );
+
+                        return;
+                    }
+
+                    this.socket.once(
+                        'connect',
+                        async () => {
+                            console.log(
+                                '✅ SOCKET CONNECTED'
+                            );
+
+                            this.isConnected =
+                                true;
+
+                            if (!token) {
+                                console.log(
+                                    '❌ TOKEN NOT FOUND'
+                                );
+
+                                reject(
+                                    new Error(
+                                        'Token not found'
+                                    )
+                                );
+
+                                return;
+                            }
+
+                            console.log(
+                                '🔐 AUTHENTICATING SOCKET...'
+                            );
+
+                            const authResponse =
+                                await this.authenticate(
+                                    token
+                                );
+
+                            console.log(
+                                '📥 AUTH RESPONSE:',
+                                authResponse
+                            );
+
+                            if (
+                                !authResponse.success
+                            ) {
+                                reject(
+                                    new Error(
+                                        authResponse.error
+                                    )
+                                );
+
+                                return;
+                            }
+
+                            this.isAuthenticated =
+                                true;
+
+                            console.log(
+                                '✅ SOCKET AUTHENTICATED'
+                            );
+
+                            resolve();
+                        }
+                    );
+
+                    this.socket.once(
+                        'connect_error',
+                        (
+                            error
+                        ) => {
+                            console.log(
+                                '❌ CONNECT ERROR:',
+                                error.message
+                            );
+
+                            reject(
+                                error
+                            );
+                        }
+                    );
+                }
+            );
+        } catch (error) {
+            console.error(
+                '❌ connect fatal error:',
+                error
+            );
+
+            throw error;
+        }
     }
 
-
+    // ─────────────────────────────────────────────────────────────
+    // LISTENERS
+    // ─────────────────────────────────────────────────────────────
 
     private setupLifecycleListeners(
         initialToken: string | null
     ): void {
-        const socket = this.socket as Socket<any, any> | null;
+        const socket =
+            this.socket as Socket<
+                any,
+                any
+            > | null;
 
-        if (!socket) return;
+        if (!socket) {
+            return;
+        }
 
-        socket.on('connect', async () => {
-            this.isConnected = true;
-            this.isReconnecting = false;
+        socket.on(
+            'connect',
+            async () => {
+                this.isConnected =
+                    true;
 
-            console.log(
-                'WebSocket connected:',
-                socket.id
-            );
+                this.isReconnecting =
+                    false;
 
-            const token =
-                (await AsyncStorage.getItem(
-                    STORAGE_KEYS.TOKEN
-                )) ?? initialToken;
+                console.log(
+                    '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                );
 
+                console.log(
+                    '🔌 SOCKET CONNECTED'
+                );
 
-        });
+                console.log(
+                    'socket.id:',
+                    socket.id
+                );
+
+                console.log(
+                    '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                );
+
+                const token =
+                    (await AsyncStorage.getItem(
+                        STORAGE_KEYS.TOKEN
+                    )) ??
+                    initialToken;
+
+                console.log(
+                    '🔑 TOKEN EXISTS:',
+                    !!token
+                );
+            }
+        );
 
         socket.on(
             'authenticated',
-            async (data: { userId: string }) => {
-                this.isAuthenticated = true;
+            async (
+                data: {
+                    userId: string;
+                }
+            ) => {
+                this.isAuthenticated =
+                    true;
 
                 console.log(
-                    'Socket authenticated:',
+                    '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                );
+
+                console.log(
+                    '✅ SOCKET AUTHENTICATED'
+                );
+
+                console.log(
+                    'userId:',
                     data.userId
                 );
 
-                const { roomId } =
+                console.log(
+                    '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                );
+
+                const {
+                    roomId,
+                } =
                     await this.getSession();
 
-                if (roomId) {
+                if (
+                    roomId
+                ) {
                     console.log(
-                        'Rejoining room:',
+                        '♻️ REJOIN ROOM:',
                         roomId
                     );
 
                     const response =
-                        await this.joinRoom(roomId);
+                        await this.joinRoom(
+                            roomId
+                        );
 
-                    if (!response.success) {
+                    console.log(
+                        '📥 REJOIN RESPONSE:',
+                        response
+                    );
+
+                    if (
+                        !response.success
+                    ) {
                         console.warn(
-                            'Failed to rejoin room:',
+                            '❌ FAILED TO REJOIN ROOM:',
                             response.error
                         );
 
@@ -214,66 +373,207 @@ class WebSocketService {
             }
         );
 
-        socket.on('auth_error', (error: { message?: string }) => {
-            this.isAuthenticated = false;
+        socket.on(
+            'match-found',
+            (
+                data
+            ) => {
+                console.log(
+                    '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                );
 
-            console.warn(
-                'Socket auth error:',
-                error.message
-            );
-        });
+                console.log(
+                    '🎉 MATCH FOUND EVENT'
+                );
 
-        socket.on('disconnect', (reason) => {
-            this.isConnected = false;
-            this.isAuthenticated = false;
+                console.log(
+                    data
+                );
 
-            console.log(
-                'Socket disconnected:',
+                console.log(
+                    '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                );
+            }
+        );
+
+        socket.on(
+            'queue-joined',
+            (
+                data
+            ) => {
+                console.log(
+                    '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                );
+
+                console.log(
+                    '📥 QUEUE JOINED'
+                );
+
+                console.log(
+                    data
+                );
+
+                console.log(
+                    '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                );
+            }
+        );
+
+        socket.on(
+            'queue-status',
+            (
+                data
+            ) => {
+                console.log(
+                    '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                );
+
+                console.log(
+                    '📊 QUEUE STATUS'
+                );
+
+                console.log(
+                    data
+                );
+
+                console.log(
+                    '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                );
+            }
+        );
+
+        socket.on(
+            'room-joined',
+            (
+                data
+            ) => {
+                console.log(
+                    '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                );
+
+                console.log(
+                    '🚪 ROOM JOINED'
+                );
+
+                console.log(
+                    data
+                );
+
+                console.log(
+                    '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                );
+            }
+        );
+
+        socket.on(
+            'auth_error',
+            (
+                error: {
+                    message?: string;
+                }
+            ) => {
+                this.isAuthenticated =
+                    false;
+
+                console.warn(
+                    '❌ AUTH ERROR:',
+                    error.message
+                );
+            }
+        );
+
+        socket.on(
+            'disconnect',
+            (
                 reason
-            );
-        });
+            ) => {
+                this.isConnected =
+                    false;
+
+                this.isAuthenticated =
+                    false;
+
+                console.log(
+                    '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                );
+
+                console.log(
+                    '🔌 SOCKET DISCONNECTED'
+                );
+
+                console.log(
+                    'reason:',
+                    reason
+                );
+
+                console.log(
+                    '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                );
+            }
+        );
 
         socket.on(
             'reconnect_attempt',
-            (attempt: number) => {
-                this.isReconnecting = true;
+            (
+                attempt: number
+            ) => {
+                this.isReconnecting =
+                    true;
 
                 console.log(
-                    'Reconnect attempt:',
+                    '♻️ RECONNECT ATTEMPT:',
                     attempt
                 );
             }
         );
 
-        socket.on('reconnect', (attempt: number) => {
-            this.isReconnecting = false;
+        socket.on(
+            'reconnect',
+            (
+                attempt: number
+            ) => {
+                this.isReconnecting =
+                    false;
 
-            console.log(
-                'Reconnected after attempts:',
-                attempt
-            );
-        });
+                console.log(
+                    '✅ RECONNECTED:',
+                    attempt
+                );
+            }
+        );
 
-        socket.on('connect_error', (error) => {
-            console.warn(
-                'Socket connection error:',
-                error.message
-            );
-        });
+        socket.on(
+            'connect_error',
+            (
+                error
+            ) => {
+                console.warn(
+                    '❌ SOCKET CONNECTION ERROR:',
+                    error.message
+                );
+            }
+        );
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Desconexão
+    // DISCONNECT
     // ─────────────────────────────────────────────────────────────
 
     disconnect(): void {
+        console.log(
+            '🔌 MANUAL DISCONNECT'
+        );
+
         if (this.socket) {
             this.socket.disconnect();
+
             this.socket = null;
         }
 
         this.isConnected = false;
+
         this.isAuthenticated = false;
+
         this.isReconnecting = false;
     }
 
@@ -282,7 +582,7 @@ class WebSocketService {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // ACK Core
+    // ACK
     // ─────────────────────────────────────────────────────────────
 
     private emitWithAck<T = unknown>(
@@ -290,62 +590,232 @@ class WebSocketService {
         payload?: unknown,
         timeout = 5000
     ): Promise<AckResponse<T>> {
-        return new Promise((resolve) => {
-            if (!this.socket || !this.socket.connected) {
-                resolve({
-                    success: false,
-                    error: 'Socket not connected',
-                });
-
-                return;
-            }
-
-            let resolved = false;
-
-            const finish = (
-                response: AckResponse<T>
+        return new Promise(
+            (
+                resolve
             ) => {
-                if (resolved) return;
+                console.log(
+                    '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                );
 
-                resolved = true;
+                console.log(
+                    '📤 EMIT'
+                );
 
-                clearTimeout(timer);
+                console.log(
+                    'event:',
+                    event
+                );
 
-                resolve(response);
-            };
+                console.log(
+                    'payload:',
+                    payload
+                );
 
-            const timer = setTimeout(() => {
-                finish({
-                    success: false,
-                    error: 'ACK timeout',
-                });
-            }, timeout);
+                console.log(
+                    'socket connected:',
+                    this.socket
+                        ?.connected
+                );
 
-            this.socket.emit(
-                event as any,
-                payload,
-                (response: AckResponse<T>) => {
-                    finish(response);
+                console.log(
+                    'authenticated:',
+                    this
+                        .isAuthenticated
+                );
+
+                console.log(
+                    'socket id:',
+                    this.socket
+                        ?.id
+                );
+
+                console.log(
+                    '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                );
+
+                if (
+                    !this.socket ||
+                    !this.socket
+                        .connected
+                ) {
+                    console.log(
+                        '❌ SOCKET NOT CONNECTED'
+                    );
+
+                    resolve({
+                        success: false,
+                        error:
+                            'Socket not connected',
+                    });
+
+                    return;
                 }
-            );
-        });
+
+                let resolved =
+                    false;
+
+                const finish =
+                    (
+                        response: AckResponse<T>
+                    ) => {
+                        if (
+                            resolved
+                        ) {
+                            return;
+                        }
+
+                        resolved =
+                            true;
+
+                        clearTimeout(
+                            timer
+                        );
+
+                        console.log(
+                            '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                        );
+
+                        console.log(
+                            '📥 ACK RECEIVED'
+                        );
+
+                        console.log(
+                            'event:',
+                            event
+                        );
+
+                        console.log(
+                            'response:',
+                            response
+                        );
+
+                        console.log(
+                            '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                        );
+
+                        resolve(
+                            response
+                        );
+                    };
+
+                const timer =
+                    setTimeout(
+                        () => {
+                            console.log(
+                                '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                            );
+
+                            console.log(
+                                '⏰ ACK TIMEOUT'
+                            );
+
+                            console.log(
+                                'event:',
+                                event
+                            );
+
+                            console.log(
+                                'payload:',
+                                payload
+                            );
+
+                            console.log(
+                                'socket connected:',
+                                this
+                                    .socket
+                                    ?.connected
+                            );
+
+                            console.log(
+                                'socket id:',
+                                this
+                                    .socket
+                                    ?.id
+                            );
+
+                            console.log(
+                                '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                            );
+
+                            finish(
+                                {
+                                    success: false,
+                                    error:
+                                        'ACK timeout',
+                                }
+                            );
+                        },
+                        timeout
+                    );
+
+                this.socket.emit(
+                    event as any,
+                    payload,
+                    (
+                        response: AckResponse<T>
+                    ) => {
+                        console.log(
+                            '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                        );
+
+                        console.log(
+                            '📥 RAW ACK CALLBACK'
+                        );
+
+                        console.log(
+                            'event:',
+                            event
+                        );
+
+                        console.log(
+                            'response:',
+                            response
+                        );
+
+                        console.log(
+                            '━━━━━━━━━━━━━━━━━━━━━━━━━━'
+                        );
+
+                        finish(
+                            response
+                        );
+                    }
+                );
+            }
+        );
     }
 
-    private async emitWithRetry<T = unknown>(
+    private async emitWithRetry<
+        T = unknown
+    >(
         event: string,
         payload?: unknown,
         retries = 3
     ): Promise<AckResponse<T>> {
         let attempt = 0;
 
-        while (attempt < retries) {
+        while (
+            attempt <
+            retries
+        ) {
+            console.log(
+                `🔁 RETRY ATTEMPT ${attempt + 1} -> ${event}`
+            );
+
             const response =
                 await this.emitWithAck<T>(
                     event,
                     payload
                 );
 
-            if (response.success) {
+            if (
+                response.success
+            ) {
+                console.log(
+                    `✅ ${event} SUCCESS`
+                );
+
                 return response;
             }
 
@@ -356,48 +826,69 @@ class WebSocketService {
                 response.error
             );
 
-            await new Promise((resolve) =>
-                setTimeout(
-                    resolve,
-                    1000 * attempt
-                )
+            await new Promise(
+                (
+                    resolve
+                ) =>
+                    setTimeout(
+                        resolve,
+                        1000 *
+                        attempt
+                    )
             );
         }
 
+        console.log(
+            `❌ ${event} MAX RETRIES EXCEEDED`
+        );
+
         return {
             success: false,
-            error: 'Max retries exceeded',
+            error:
+                'Max retries exceeded',
         };
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Eventos críticos com ACK
+    // ACTIONS
     // ─────────────────────────────────────────────────────────────
 
-    async authenticate(token: string) {
+    async authenticate(
+        token: string
+    ) {
         return this.emitWithRetry(
             'authenticate',
-            { token }
+            {
+                token,
+            }
         );
     }
 
-    async joinRoom(roomId: string) {
+    async joinRoom(
+        roomId: string
+    ) {
         return this.emitWithRetry(
             'join-room',
-            { roomId }
+            {
+                roomId,
+            }
         );
     }
 
-    async leaveRoom(roomId: string) {
+    async leaveRoom(
+        roomId: string
+    ) {
         return this.emitWithRetry(
             'leave-room',
-            { roomId }
+            {
+                roomId,
+            }
         );
     }
 
     async sendMessage(
         roomId: string,
-        message: string,
+        message: string
     ) {
         return this.emitWithRetry(
             'send-message',
@@ -408,10 +899,19 @@ class WebSocketService {
         );
     }
 
-    async findMatch(category: string) {
+    async findMatch(
+        category: string
+    ) {
+        console.log(
+            '🔍 FIND MATCH CALLED:',
+            category
+        );
+
         return this.emitWithRetry(
             'find-match',
-            { category }
+            {
+                category,
+            }
         );
     }
 
@@ -428,11 +928,13 @@ class WebSocketService {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Eventos
+    // EVENTS
     // ─────────────────────────────────────────────────────────────
 
     onMessage(
-        callback: (data: MessageDTO) => void
+        callback: (
+            data: MessageDTO
+        ) => void
     ): void {
         this.socket?.on(
             'new-message',
@@ -441,7 +943,9 @@ class WebSocketService {
     }
 
     onMatchingFound(
-        callback: (data: MatchDTO) => void
+        callback: (
+            data: MatchDTO
+        ) => void
     ): void {
         this.socket?.on(
             'match-found',
@@ -450,10 +954,12 @@ class WebSocketService {
     }
 
     onUserLeft(
-        callback: (data: {
-            roomId: string;
-            message: string;
-        }) => void
+        callback: (
+            data: {
+                roomId: string;
+                message: string;
+            }
+        ) => void
     ): void {
         this.socket?.on(
             'partner_left',
@@ -462,9 +968,11 @@ class WebSocketService {
     }
 
     onPartnerDisconnected(
-        callback: (data: {
-            message: string;
-        }) => void
+        callback: (
+            data: {
+                message: string;
+            }
+        ) => void
     ): void {
         this.socket?.on(
             'partner_disconnected',
@@ -473,10 +981,12 @@ class WebSocketService {
     }
 
     onQueueJoined(
-        callback: (data: {
-            category: string;
-            position: number;
-        }) => void
+        callback: (
+            data: {
+                category: string;
+                position: number;
+            }
+        ) => void
     ): void {
         this.socket?.on(
             'queue-joined',
@@ -485,9 +995,11 @@ class WebSocketService {
     }
 
     onQueueLeft(
-        callback: (data: {
-            success: boolean;
-        }) => void
+        callback: (
+            data: {
+                success: boolean;
+            }
+        ) => void
     ): void {
         this.socket?.on(
             'queue-left',
@@ -496,10 +1008,12 @@ class WebSocketService {
     }
 
     onQueueTimeout(
-        callback: (data: {
-            message: string;
-            category: string;
-        }) => void
+        callback: (
+            data: {
+                message: string;
+                category: string;
+            }
+        ) => void
     ): void {
         this.socket?.on(
             'queue-timeout',
@@ -508,11 +1022,13 @@ class WebSocketService {
     }
 
     onSessionState(
-        callback: (data: {
-            inQueue: boolean;
-            category: string | null;
-            currentRoom: string | null;
-        }) => void
+        callback: (
+            data: {
+                inQueue: boolean;
+                category: string | null;
+                currentRoom: string | null;
+            }
+        ) => void
     ): void {
         this.socket?.on(
             'session-state',
@@ -520,31 +1036,46 @@ class WebSocketService {
         );
     }
 
-
     removeChatListeners(): void {
-        this.socket?.off('new-message');
+        console.log(
+            '🧹 Removing chat listeners'
+        );
 
-        this.socket?.off('match-found');
+        this.socket?.off(
+            'new-message'
+        );
 
-        this.socket?.off('partner_left');
+        this.socket?.off(
+            'match-found'
+        );
+
+        this.socket?.off(
+            'partner_left'
+        );
 
         this.socket?.off(
             'partner_disconnected'
         );
 
-        this.socket?.off('queue-joined');
+        this.socket?.off(
+            'queue-joined'
+        );
 
-        this.socket?.off('queue-left');
+        this.socket?.off(
+            'queue-left'
+        );
 
-        this.socket?.off('queue-timeout');
+        this.socket?.off(
+            'queue-timeout'
+        );
 
-        this.socket?.off('session-state');
+        this.socket?.off(
+            'session-state'
+        );
     }
 
-
-
     // ─────────────────────────────────────────────────────────────
-    // Getters
+    // GETTERS
     // ─────────────────────────────────────────────────────────────
 
     get connected(): boolean {
