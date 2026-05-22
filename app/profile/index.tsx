@@ -220,16 +220,7 @@ export default function Profile() {
 
             </View>
 
-            {/* LOGOUT */}
-            <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={handleLogout}
-                style={{ marginTop: 20, paddingHorizontal: 20 }}
-            >
-                <Text style={{ color: '#ff4d4d', fontSize: 16, fontWeight: '700' }}>
-                    Sair da Conta
-                </Text>
-            </TouchableOpacity>
+            
 
             {/* AVATAR POPUP */}
             <Modal visible={showProfilePopup} transparent animationType="fade">
