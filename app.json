@@ -21,13 +21,20 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.cauacomc.MeetParrot"
     },
     "web": {
       "favicon": "./assets/logos/icon.png"
     },
     "plugins": [
       "expo-router"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "660550ee-5166-4b29-b70d-d83357b9097d"
+      }
+    }
   }
 }
