@@ -15,6 +15,8 @@ import { chatSelectStyles as styles } from '../../styles/screens/chatSelectStyle
 import { Header } from '../../components/Header';
 import { Footer } from '../../components/Footer';
 
+// IMPORTANTE: IDs em minúsculo para bater com o backend
+// Backend aceita: 'movies' | 'games' | 'series' | 'books'
 interface ChatCategory {
   id: string;
   name: string;
@@ -24,25 +26,25 @@ interface ChatCategory {
 
 const categories: ChatCategory[] = [
   {
-    id: 'Movies',
+    id: 'movies',       // <- lowercase, igual ao backend
     name: 'Movies',
     online: '80.000 people online',
     icon: require('../../assets/chat_icons/movies_icon.png'),
   },
   {
-    id: 'Games',
+    id: 'games',        // <- lowercase, igual ao backend
     name: 'Games',
     online: '150.000 people online',
     icon: require('../../assets/chat_icons/games_icon.png'),
   },
   {
-    id: 'Series',
+    id: 'series',       // <- lowercase, igual ao backend
     name: 'Series',
     online: '80.000 people online',
     icon: require('../../assets/chat_icons/series_icon.png'),
   },
   {
-    id: 'Books',
+    id: 'books',        // <- lowercase, igual ao backend
     name: 'Books',
     online: '60.000 people online',
     icon: require('../../assets/chat_icons/books_icon.png'),

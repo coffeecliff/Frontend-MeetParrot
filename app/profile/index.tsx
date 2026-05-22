@@ -10,91 +10,95 @@ import {
     ImageBackground,
     ScrollView,
     Modal,
+    Alert,
+    Platform,
 } from 'react-native';
 
 import { Header } from '../../components/Header';
-
+import { AnimalAvatar } from '../../components/AnimalAvatar';
 import { profileStyles as styles } from '../../styles/screens/profileStyles';
-
 import { useRouter } from 'expo-router';
-
 import { useAuth } from '../../hooks/useAuth';
+import { useAvatarShop } from '../../context/AvatarShopContext';
+import type { AvatarItem } from '../../context/AvatarShopContext';
+
+// ==============================
+// Alerta cross-platform
+// Usa window.confirm no web (Alert.alert não existe no browser)
+// ==============================
+function crossAlert(title: string, message: string, onConfirm: () => void, onCancel?: () => void) {
+    if (Platform.OS === 'web') {
+        const confirmed = window.confirm(`${title}\n\n${message}`);
+        if (confirmed) onConfirm();
+        else onCancel?.();
+    } else {
+        Alert.alert(
+            title,
+            message,
+            [
+                { text: 'Cancelar', style: 'cancel', onPress: onCancel },
+                { text: 'Confirmar', onPress: onConfirm },
+            ]
+        );
+    }
+}
+
+function crossAlertInfo(title: string, message: string) {
+    if (Platform.OS === 'web') {
+        window.alert(`${title}\n\n${message}`);
+    } else {
+        Alert.alert(title, message);
+    }
+}
 
 export default function Profile() {
     const router = useRouter();
+    const { user, logout } = useAuth();
 
-    const { logout } = useAuth();
+    const {
+        equippedAvatar,
+        avatars,
+        purchasedIds,
+        equipAvatar,
+        buyAvatar,
+        coins,
+    } = useAvatarShop();
 
     const handleLogout = async () => {
         await logout();
-
         router.replace('/auth/login');
     };
 
-    const [showProfilePopup, setShowProfilePopup] =
-        useState(false);
+    const [showProfilePopup, setShowProfilePopup] = useState(false);
 
-    const profilePhotos = [
-        {
-            id: 1,
-            image: require('../../assets/profile_icons/parrot.png'),
-            unlocked: true,
-        },
+    const handleAvatarPress = (item: AvatarItem) => {
+        const unlocked = purchasedIds.includes(item.id);
 
-        {
-            id: 2,
-            image: require('../../assets/profile_icons/cat.png'),
-            unlocked: true,
-        },
+        if (unlocked) {
+            equipAvatar(item.id);
+            setShowProfilePopup(false);
+            return;
+        }
 
-        {
-            id: 3,
-            image: require('../../assets/profile_icons/dog.png'),
-            unlocked: true,
-        },
+        if (coins < item.price) {
+            crossAlertInfo('Moedas insuficientes', `Você precisa de ${item.price} moedas.`);
+            return;
+        }
 
-        {
-            id: 4,
-            image: require('../../assets/profile_icons/seal.png'),
-            unlocked: true,
-        },
-
-        {
-            id: 5,
-            image: require('../../assets/profile_icons/bunny.png'),
-            unlocked: false,
-        },
-
-        {
-            id: 6,
-            image: require('../../assets/profile_icons/bear.png'),
-            unlocked: false,
-        },
-
-        {
-            id: 7,
-            image: require('../../assets/profile_icons/monke.png'),
-            unlocked: false,
-        },
-
-        {
-            id: 8,
-            image: require('../../assets/profile_icons/racoon.png'),
-            unlocked: false,
-        },
-
-        {
-            id: 9,
-            image: require('../../assets/profile_icons/tiger.png'),
-            unlocked: false,
-        },
-
-        {
-            id: 10,
-            image: require('../../assets/profile_icons/plant.png'),
-            unlocked: false,
-        },
-    ];
+        crossAlert(
+            'Comprar avatar',
+            `Deseja comprar este avatar por ${item.price} moedas?`,
+            () => {
+                const result = buyAvatar(item);
+                if (result === 'ok') {
+                    equipAvatar(item.id);
+                    setShowProfilePopup(false);
+                } else if (result === 'insufficient') {
+                    crossAlertInfo('Moedas insuficientes', `Você precisa de ${item.price} moedas.`);
+                }
+            }
+        );
+    };
 
     return (
         <View style={styles.container}>
@@ -109,9 +113,7 @@ export default function Profile() {
             <Header />
 
             {/* TITLE */}
-            <Text style={styles.title}>
-                Edit Profile
-            </Text>
+            <Text style={styles.title}>Edit Profile</Text>
 
             {/* PROFILE AREA */}
             <View style={styles.profileRow}>
@@ -119,8 +121,9 @@ export default function Profile() {
                 {/* PROFILE IMAGE */}
                 <View style={styles.profileWrapper}>
 
-                    <Image
-                        source={require('../../assets/profile_icons/dog.png')}
+                    <AnimalAvatar
+                        size={120}
+                        source={equippedAvatar.image}
                         style={styles.profileImage}
                     />
 
@@ -128,9 +131,7 @@ export default function Profile() {
                     <TouchableOpacity
                         activeOpacity={0.8}
                         style={styles.editButton}
-                        onPress={() =>
-                            setShowProfilePopup(true)
-                        }
+                        onPress={() => setShowProfilePopup(true)}
                     >
                         <Image
                             source={require('../../assets/pencil.png')}
@@ -144,7 +145,7 @@ export default function Profile() {
                 <View style={styles.userInfo}>
 
                     <Text style={styles.username}>
-                        DogLover
+                        {user?.username || 'Usuário'}
                     </Text>
 
                     {/* COINS */}
@@ -157,20 +158,12 @@ export default function Profile() {
                             style={styles.coinBox}
                             imageStyle={styles.coinBoxImage}
                         >
-
                             <Image
                                 source={require('../../assets/coin.png')}
                                 style={styles.coinIcon}
                             />
-
-                            <Text style={styles.coinText}>
-                                999
-                            </Text>
-
-                            <Text style={styles.plusText}>
-                                +
-                            </Text>
-
+                            <Text style={styles.coinText}>{coins}</Text>
+                            <Text style={styles.plusText}>+</Text>
                         </ImageBackground>
                     </TouchableOpacity>
 
@@ -182,17 +175,10 @@ export default function Profile() {
             <View style={styles.section}>
 
                 <View style={styles.sectionTitleRow}>
-
-                    <Text style={styles.sectionTitle}>
-                        Chat Background
-                    </Text>
-
+                    <Text style={styles.sectionTitle}>Chat Background</Text>
                     <View style={styles.infoIconContainer}>
-                        <Text style={styles.infoIconText}>
-                            i
-                        </Text>
+                        <Text style={styles.infoIconText}>i</Text>
                     </View>
-
                 </View>
 
                 <ScrollView
@@ -200,63 +186,36 @@ export default function Profile() {
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.backgroundsScroll}
                 >
-
                     <View style={styles.backgroundList}>
-
-                        {/* SELECTED */}
                         <TouchableOpacity activeOpacity={0.8}>
-
                             <ImageBackground
                                 source={require('../../assets/backgrounds/default_bg.png')}
-                                style={[
-                                    styles.bgCard,
-                                    styles.selectedBgCard
-                                ]}
+                                style={[styles.bgCard, styles.selectedBgCard]}
                                 imageStyle={styles.bgCardImage}
                             >
-
                                 <Image
                                     source={require('../../assets/check.png')}
                                     style={styles.checkIcon}
                                 />
-
                             </ImageBackground>
-
                         </TouchableOpacity>
 
-                        {/* GREEN BG */}
                         <TouchableOpacity activeOpacity={0.8}>
-
                             <ImageBackground
                                 source={require('../../assets/backgrounds/bg1.png')}
                                 style={styles.bgCard}
                                 imageStyle={styles.bgCardImage}
                             />
-
                         </TouchableOpacity>
 
                         <TouchableOpacity activeOpacity={0.8}>
-
                             <ImageBackground
                                 source={require('../../assets/backgrounds/green_bg.png')}
                                 style={styles.bgCard}
                                 imageStyle={styles.bgCardImage}
                             />
-
                         </TouchableOpacity>
-
-                        <TouchableOpacity activeOpacity={0.8}>
-
-                            <ImageBackground
-                                source={require('../../assets/backgrounds/green_bg.png')}
-                                style={styles.bgCard}
-                                imageStyle={styles.bgCardImage}
-                            />
-
-                        </TouchableOpacity>
-
                     </View>
-
                 </ScrollView>
 
             </View>
@@ -265,104 +224,85 @@ export default function Profile() {
             <TouchableOpacity
                 activeOpacity={0.7}
                 onPress={handleLogout}
-                style={{ marginTop: 20 }}
+                style={{ marginTop: 20, paddingHorizontal: 20 }}
             >
-                <Text
-                    style={{
-                        color: '#ff4d4d',
-                        fontSize: 16,
-                        fontWeight: '700',
-                        paddingRight: 100,
-                    }}
-                >
+                <Text style={{ color: '#ff4d4d', fontSize: 16, fontWeight: '700' }}>
                     Sair da Conta
                 </Text>
             </TouchableOpacity>
 
-            {/* PROFILE PHOTO POPUP */}
-            <Modal
-                visible={showProfilePopup}
-                transparent
-                animationType="fade"
-            >
-
+            {/* AVATAR POPUP */}
+            <Modal visible={showProfilePopup} transparent animationType="fade">
                 <View style={styles.modalOverlay}>
-
                     <View style={styles.modalContainer}>
 
-                        {/* TOP */}
                         <View style={styles.modalHeader}>
-
                             <TouchableOpacity
                                 activeOpacity={0.8}
-                                onPress={() =>
-                                    setShowProfilePopup(false)
-                                }
+                                onPress={() => setShowProfilePopup(false)}
                             >
                                 <Image
                                     source={require('../../assets/buttons/back_bt.png')}
                                     style={styles.modalBackIcon}
                                 />
                             </TouchableOpacity>
+                            <Text style={styles.modalTitle}>Select photo</Text>
 
-                            <Text style={styles.modalTitle}>
-                                Select photo
-                            </Text>
-
+                            {/* Saldo de moedas no modal */}
+                            <View style={styles.modalCoinBadge}>
+                                <Image
+                                    source={require('../../assets/coin.png')}
+                                    style={styles.modalCoinIcon}
+                                />
+                                <Text style={styles.modalCoinText}>{coins}</Text>
+                            </View>
                         </View>
 
-                        {/* PHOTO GRID */}
                         <View style={styles.photoGrid}>
+                            {avatars.map((item) => {
+                                const unlocked = purchasedIds.includes(item.id);
+                                const selected = equippedAvatar.id === item.id;
 
-                            {profilePhotos.map((item) => (
-
-                                <TouchableOpacity
-                                    key={item.id}
-                                    activeOpacity={0.8}
-                                    style={styles.photoButton}
-                                >
-
-                                    <ImageBackground
-                                        source={item.image}
-                                        style={styles.photoImage}
-                                        imageStyle={styles.photoImageStyle}
+                                return (
+                                    <TouchableOpacity
+                                        key={item.id}
+                                        activeOpacity={0.8}
+                                        style={styles.photoButton}
+                                        onPress={() => handleAvatarPress(item)}
                                     >
+                                        {/* Container relativo para posicionar overlay corretamente */}
+                                        <View
+                                            style={[
+                                                styles.photoImage,
+                                                selected && styles.photoSelected,
+                                            ]}
+                                        >
+                                            <AnimalAvatar
+                                                size={72}
+                                                source={item.image}
+                                                style={styles.photoImageStyle}
+                                            />
 
-                                        {!item.unlocked && (
-                                            <View style={styles.lockedOverlay}>
-
-                                                <ImageBackground
-                                                    source={require('../../assets/profile_icons/blocked_overlay.png')}
-                                                    style={styles.priceBox}
-                                                    imageStyle={styles.priceBoxImage}
-                                                >
-
-                                                    <Image
-                                                        source={require('../../assets/coin.png')}
-                                                        style={styles.priceCoin}
-                                                    />
-
-                                                    <Text style={styles.priceText}>
-                                                        150
-                                                    </Text>
-
-                                                </ImageBackground>
-
-                                            </View>
-                                        )}
-
-                                    </ImageBackground>
-
-                                </TouchableOpacity>
-
-                            ))}
-
+                                            {/* Overlay de bloqueado — posicionado absolutamente SOBRE a imagem */}
+                                            {!unlocked && (
+                                                <View style={styles.lockedOverlay}>
+                                                    <View style={styles.priceBox}>
+                                                        <Image
+                                                            source={require('../../assets/coin.png')}
+                                                            style={styles.priceCoin}
+                                                        />
+                                                        <Text style={styles.priceText}>{item.price}</Text>
+                                                    </View>
+                                                </View>
+                                            )}
+                                        </View>
+                                    </TouchableOpacity>
+                                );
+                            })}
                         </View>
 
                     </View>
-
                 </View>
-
             </Modal>
 
         </View>

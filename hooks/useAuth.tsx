@@ -1,13 +1,14 @@
-import React, { useState, useContext, createContext, ReactNode, useEffect } from 'react';
+import React, { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { User } from '../constants/types';
 import { apiService } from '../services/api';
 import { wsService } from '../services/websocket';
+import { logger } from '../services/logger';
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<true | string>;
   register: (username: string, email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
 }
@@ -18,76 +19,95 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    checkAuthStatus();
-  }, []);
-
-  const checkAuthStatus = async () => {
+  const checkAuthStatus = useCallback(async () => {
+    logger.auth.log('Checking auth status');
+    setIsLoading(true);
     try {
       const response = await apiService.getProfile();
+      logger.auth.log('User authenticated:', response.user);
       setUser(response.user);
-      await wsService.connect();
+      try {
+        await wsService.connect();
+      } catch (wsError) {
+        logger.auth.error('WebSocket connection failed:', wsError);
+      }
     } catch (error) {
-      console.log('Not authenticated');
+      logger.auth.error('Auth check failed:', error);
+      setUser(null);
+      wsService.disconnect();
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  useEffect(() => {
+    checkAuthStatus();
+  }, [checkAuthStatus]);
+
+  const login = useCallback(async (email: string, password: string): Promise<true | string> => {
+    logger.auth.log('Login started');
+    setIsLoading(true);
     try {
-      const response = await apiService.Login(email, password);
+      const response = await apiService.login(email, password);
+      logger.auth.log('Login success:', response.user);
       setUser(response.user);
-      await wsService.connect();
+      try {
+        await wsService.connect();
+      } catch (wsError) {
+        logger.auth.error('WebSocket connection failed after login:', wsError);
+      }
       return true;
     } catch (error) {
-      console.error('Login error:', error);
-      return false;
+      logger.auth.error('Login error:', error);
+      return error instanceof Error ? error.message : 'Erro desconhecido';
+    } finally {
+      setIsLoading(false);
     }
-  };
+  }, []);
 
-  const register = async (username: string, email: string, password: string): Promise<boolean> => {
+  const register = useCallback(async (username: string, email: string, password: string): Promise<boolean> => {
+    logger.auth.log('Register started');
+    setIsLoading(true);
     try {
-      const response = await apiService.Register(username, email, password);
+      const response = await apiService.register(username, email, password);
+      logger.auth.log('Register success:', response.user);
       setUser(response.user);
-      await wsService.connect();
+      try {
+        await wsService.connect();
+      } catch (wsError) {
+        logger.auth.error('WebSocket connection failed after register:', wsError);
+      }
       return true;
     } catch (error) {
-      console.error('Register error:', error);
+      logger.auth.error('Register error:', error);
       return false;
+    } finally {
+      setIsLoading(false);
     }
-  };
+  }, []);
 
-  const logout = async () => {
+  const logout = useCallback(async (): Promise<void> => {
+    logger.auth.log('Logout started');
+    setIsLoading(true);
     try {
-      await apiService.Logout();
-      wsService.disconnected();
+      await apiService.logout();
+    } catch (error) {
+      logger.auth.error('Logout API error:', error);
+    } finally {
       setUser(null);
-    } catch (error) {
-      console.error('Logout error:', error);
+      wsService.disconnect();
+      setIsLoading(false);
+      logger.auth.log('Logout complete');
     }
-  };
+  }, []);
 
-  const value = {
-    user,
-    isAuthenticated: !!user,
-    isLoading,
-    login,
-    register,
-    logout
-  };
+  const value = useMemo(() => ({ user, isAuthenticated: !!user, isLoading, login, register, logout }), [user, isLoading, login, register, logout]);
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within AuthProvider');
   return context;
 }

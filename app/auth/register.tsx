@@ -12,19 +12,13 @@ import {
 } from 'react-native';
 
 import { useRouter } from 'expo-router';
-
 import { useAuth } from '../../hooks/useAuth';
-
-import { CalendarDays } from 'lucide-react-native';
-
+// Removido: import { CalendarDays } from 'lucide-react-native';  <- pode não estar instalado
 import { registerStyles as styles } from '../../styles/screens/registerStyles';
-
 import { Input } from '../../components/Input';
-
 
 export default function Register() {
     const router = useRouter();
-
     const { register } = useAuth();
 
     const [name, setName] = useState('');
@@ -33,8 +27,7 @@ export default function Register() {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [birthDate, setBirthDate] = useState('');
     const [acceptedTerms, setAcceptedTerms] = useState(false);
-
-    const [loading, _setLoading] = useState(false);
+    const [loading, setLoading] = useState(false);
 
     const handleRegister = async () => {
         if (!name || !email || !password || !confirmPassword) {
@@ -57,27 +50,18 @@ export default function Register() {
             return;
         }
 
+        setLoading(true);
         try {
-            const success = await register(
-                name,
-                email,
-                password
-            );
-
+            const success = await register(name, email, password);
             if (success) {
                 router.replace('/chat/select');
             } else {
-                Alert.alert(
-                    'Erro',
-                    'Não foi possível criar a conta'
-                );
+                Alert.alert('Erro', 'Não foi possível criar a conta');
             }
-
         } catch (error) {
-            Alert.alert(
-                'Erro',
-                'Erro ao registrar'
-            );
+            Alert.alert('Erro', 'Erro ao registrar');
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -97,13 +81,6 @@ export default function Register() {
 
             <View style={styles.content}>
 
-                {/* PARROT */}
-                <Image
-                    source={require('../../assets/logos/parrot_logo2.png')}
-                    resizeMode='contain'
-                    style={styles.parrot}
-                />
-
                 {/* LOGO */}
                 <Image
                     source={require('../../assets/logos/logo_text.png')}
@@ -120,169 +97,107 @@ export default function Register() {
                 <View style={styles.inputContainer}>
 
                     {/* NAME */}
-                    <View>
-
-                        <ImageBackground
-                            source={require('../../assets/clay_backgrounds/input_bg.png')}
-                            style={styles.inputBackground}
-                            imageStyle={styles.inputImage}
-
-                        >
-                            <Input
-                                value={name}
-                                onChangeText={setName}
-                                placeholder='Seu nome'
-                                placeholderTextColor="#777"
-                                style={styles.input}
-                            />
-                        </ImageBackground>
-                    </View>
+                    <ImageBackground
+                        source={require('../../assets/clay_backgrounds/input_bg.png')}
+                        style={styles.inputBackground}
+                        imageStyle={styles.inputImage}
+                    >
+                        <Input
+                            value={name}
+                            onChangeText={setName}
+                            placeholder='Seu nome'
+                            placeholderTextColor="#777"
+                            style={styles.input}
+                        />
+                    </ImageBackground>
 
                     {/* EMAIL */}
-                    <View>
-
-                        <ImageBackground
-                            source={require('../../assets/clay_backgrounds/input_bg.png')}
-                            style={styles.inputBackground}
-                            imageStyle={styles.inputImage}
-
-                        >
-                            <Input
-                                value={email}
-                                onChangeText={setEmail}
-                                placeholder='seu@email.com'
-                                placeholderTextColor="#777"
-                                autoCapitalize='none'
-                                keyboardType='email-address'
-                                style={styles.input}
-                            />
-                        </ImageBackground>
-                    </View>
+                    <ImageBackground
+                        source={require('../../assets/clay_backgrounds/input_bg.png')}
+                        style={styles.inputBackground}
+                        imageStyle={styles.inputImage}
+                    >
+                        <Input
+                            value={email}
+                            onChangeText={setEmail}
+                            placeholder='seu@email.com'
+                            placeholderTextColor="#777"
+                            autoCapitalize='none'
+                            keyboardType='email-address'
+                            style={styles.input}
+                        />
+                    </ImageBackground>
 
                     {/* PASSWORD */}
-                    <View>
+                    <ImageBackground
+                        source={require('../../assets/clay_backgrounds/input_bg.png')}
+                        style={styles.inputBackground}
+                        imageStyle={styles.inputImage}
+                    >
+                        <Input
+                            value={password}
+                            onChangeText={setPassword}
+                            placeholder='Senha'
+                            placeholderTextColor="#777"
+                            secureTextEntry
+                            style={styles.input}
+                        />
+                    </ImageBackground>
 
-                        <ImageBackground
-                            source={require('../../assets/clay_backgrounds/input_bg.png')}
-                            style={styles.inputBackground}
-                            imageStyle={styles.inputImage}
-
-                        >
-                            <Input
-                                value={password}
-                                onChangeText={setPassword}
-                                placeholder='Senha'
-                                placeholderTextColor="#777"
-                                secureTextEntry
-                                style={styles.input}
-                            />
-                        </ImageBackground>
-                    </View>
-
-                    <View>
-
-                        <ImageBackground
-                            source={require('../../assets/clay_backgrounds/input_bg.png')}
-                            style={styles.inputBackground}
-                            imageStyle={styles.inputImage}
-
-                        >
-                            <Input
-                                value={confirmPassword}
-                                onChangeText={setConfirmPassword}
-                                placeholder='Confirmar senha'
-                                placeholderTextColor="#777"
-                                secureTextEntry
-                                style={styles.input}
-                            />
-                        </ImageBackground>
-                    </View>
+                    {/* CONFIRM PASSWORD */}
+                    <ImageBackground
+                        source={require('../../assets/clay_backgrounds/input_bg.png')}
+                        style={styles.inputBackground}
+                        imageStyle={styles.inputImage}
+                    >
+                        <Input
+                            value={confirmPassword}
+                            onChangeText={setConfirmPassword}
+                            placeholder='Confirmar senha'
+                            placeholderTextColor="#777"
+                            secureTextEntry
+                            style={styles.input}
+                        />
+                    </ImageBackground>
 
                     {/* DATE */}
-                    <View style={styles.dateRow}>
-
-                        <View
-
-                            style={styles.calendarButton}
-                        >
-                            <ImageBackground
-                                source={require('../../assets/buttons/calendar.png')}
-                                style={styles.calendarBg}
-                                imageStyle={styles.calendarImage}
-                                resizeMode='stretch'
-                            >
-                            </ImageBackground>
-                        </View>
-
-                        <ImageBackground
-                            source={require('../../assets/clay_backgrounds/calendar_input.png')}
-                            style={styles.dateInputBackground}
-                            imageStyle={styles.inputImage}
-
-                        >
-                            <Input
-                                value={birthDate}
-                                onChangeText={(text) => {
-                                    const numeric = text.replace(/\D/g, '');
-
-                                    let formatted = numeric;
-
-                                    if (numeric.length > 2) {
-                                        formatted =
-                                            numeric.slice(0, 2) +
-                                            '/' +
-                                            numeric.slice(2);
-                                    }
-
-                                    if (numeric.length > 4) {
-                                        formatted =
-                                            numeric.slice(0, 2) +
-                                            '/' +
-                                            numeric.slice(2, 4) +
-                                            '/' +
-                                            numeric.slice(4, 8);
-                                    }
-
-                                    setBirthDate(formatted);
-                                }}
-                                placeholder='__/__/__'
-                                placeholderTextColor="#777"
-                                keyboardType="numeric"
-                                maxLength={10}
-                                style={[
-                                    styles.input,
-                                    {
-                                        textAlign: 'center',
-                                        width: '100%',
-                                    }
-                                ]}
-                            />
-                        </ImageBackground>
-
-
-
-                    </View>
+                    <ImageBackground
+                        source={require('../../assets/clay_backgrounds/input_bg.png')}
+                        style={styles.inputBackground}
+                        imageStyle={styles.inputImage}
+                    >
+                        <Input
+                            value={birthDate}
+                            onChangeText={(text) => {
+                                const numeric = text.replace(/\D/g, '');
+                                let formatted = numeric;
+                                if (numeric.length > 2) formatted = numeric.slice(0, 2) + '/' + numeric.slice(2);
+                                if (numeric.length > 4) formatted = numeric.slice(0, 2) + '/' + numeric.slice(2, 4) + '/' + numeric.slice(4, 8);
+                                setBirthDate(formatted);
+                            }}
+                            placeholder='Data de nascimento (DD/MM/AAAA)'
+                            placeholderTextColor="#777"
+                            keyboardType="numeric"
+                            maxLength={10}
+                            style={styles.input}
+                        />
+                    </ImageBackground>
 
                 </View>
 
+                {/* TERMS */}
                 <TouchableOpacity
-                    style={styles.checkboxContainer}
+                    style={styles.termsRow}
                     onPress={() => setAcceptedTerms(!acceptedTerms)}
                 >
-                    <View style={[
-                        styles.checkbox,
-                        acceptedTerms && styles.checkboxChecked
-                    ]}>
-                        {acceptedTerms && (
-                            <Text style={styles.checkIcon}>✓</Text>
-                        )}
+                    <View style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}>
+                        {acceptedTerms && <Text style={styles.checkMark}>✓</Text>}
                     </View>
-
-                    <Text style={styles.checkboxText}>
-                        Aceitar os termos de uso
+                    <Text style={styles.termsText}>
+                        Aceitar os{' '}
+                        <Text style={styles.termsLink}>termos de uso</Text>
                     </Text>
                 </TouchableOpacity>
-
 
                 {/* REGISTER BUTTON */}
                 <TouchableOpacity
@@ -294,26 +209,21 @@ export default function Register() {
                         source={require('../../assets/clay_backgrounds/green_bg.png')}
                         style={styles.registerButton}
                         imageStyle={styles.registerButtonImage}
-
                     >
                         <Text style={styles.registerButtonText}>
-                            Cadastrar-se
+                            {loading ? 'Cadastrando...' : 'Cadastrar-se'}
                         </Text>
                     </ImageBackground>
                 </TouchableOpacity>
 
-
-
-                {/* LOGIN */}
+                {/* LOGIN LINK */}
                 <TouchableOpacity
                     activeOpacity={0.7}
                     onPress={() => router.push('/auth/login')}
                 >
                     <Text style={styles.loginText}>
                         Já possui uma conta?{' '}
-                        <Text style={styles.loginLink}>
-                            Login
-                        </Text>
+                        <Text style={styles.loginLink}>Login</Text>
                     </Text>
                 </TouchableOpacity>
 

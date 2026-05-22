@@ -12,22 +12,17 @@ import {
 } from 'react-native';
 
 import { useRouter } from 'expo-router';
-
 import { loginStyles as styles } from '../../styles/screens/loginStyles';
-
 import { Input } from '../../components/Input';
-
 import { useAuth } from '../../hooks/useAuth';
 
 export default function Login() {
     const router = useRouter();
-
     const { login } = useAuth();
 
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-
-    const [loading, _setLoading] = useState(false);
+    const [loading, setLoading] = useState(false);
 
     const handleLogin = async () => {
         if (!email || !password) {
@@ -35,25 +30,23 @@ export default function Login() {
             return;
         }
 
+        setLoading(true);
         try {
-            const success = await login(email, password);
+            // login() retorna true em caso de sucesso, ou string com mensagem de erro
+            const result = await login(email, password);
 
-            if (success) {
+            if (result === true) {
                 router.replace('/chat/select');
             } else {
-                Alert.alert('Erro', 'Credenciais inválidas. Tente novamente.');
+                // result é a mensagem de erro
+                Alert.alert('Erro', typeof result === 'string' ? result : 'Credenciais inválidas.');
             }
-
-            
         } catch (error) {
-            Alert.alert(
-                'Erro',
-                'Ocorreu um erro ao tentar fazer login. Tente novamente.'
-            );
+            Alert.alert('Erro', 'Ocorreu um erro ao tentar fazer login. Tente novamente.');
+        } finally {
+            setLoading(false);
         }
     };
-
-
 
     return (
         <KeyboardAvoidingView
@@ -86,64 +79,49 @@ export default function Login() {
                 />
 
                 {/* TITLE */}
-                <Text style={styles.title}>
-                    Login
-                </Text>
+                <Text style={styles.title}>Login</Text>
 
                 {/* INPUTS */}
                 <View style={styles.inputContainer}>
 
                     {/* EMAIL */}
-                    <View>
-
-                        <ImageBackground
-                            source={require('../../assets/clay_backgrounds/input_bg.png')}
-                            style={styles.inputBackground}
-                            imageStyle={styles.inputImage}
-
-                        >
-                            <Input
-                                value={email}
-                                onChangeText={setEmail}
-                                keyboardType="email-address"
-                                autoCapitalize='none'
-                                placeholder='seu@email.com'
-                                placeholderTextColor="#777"
-                                style={styles.input}
-                            />
-                        </ImageBackground>
-                    </View>
+                    <ImageBackground
+                        source={require('../../assets/clay_backgrounds/input_bg.png')}
+                        style={styles.inputBackground}
+                        imageStyle={styles.inputImage}
+                    >
+                        <Input
+                            value={email}
+                            onChangeText={setEmail}
+                            keyboardType="email-address"
+                            autoCapitalize='none'
+                            placeholder='seu@email.com'
+                            placeholderTextColor="#777"
+                            style={styles.input}
+                        />
+                    </ImageBackground>
 
                     {/* PASSWORD */}
-                    <View>
-
-                        <ImageBackground
-                            source={require('../../assets/clay_backgrounds/input_bg.png')}
-                            style={styles.inputBackground}
-                            imageStyle={styles.inputImage}
-
-                        >
-                            <Input
-                                value={password}
-                                onChangeText={setPassword}
-                                secureTextEntry
-                                placeholder='Senha'
-                                placeholderTextColor="#777"
-                                style={styles.input}
-                            />
-                        </ImageBackground>
-                    </View>
+                    <ImageBackground
+                        source={require('../../assets/clay_backgrounds/input_bg.png')}
+                        style={styles.inputBackground}
+                        imageStyle={styles.inputImage}
+                    >
+                        <Input
+                            value={password}
+                            onChangeText={setPassword}
+                            secureTextEntry
+                            placeholder='Senha'
+                            placeholderTextColor="#777"
+                            style={styles.input}
+                        />
+                    </ImageBackground>
 
                 </View>
 
                 {/* FORGOT PASSWORD */}
-                <TouchableOpacity
-                    activeOpacity={0.7}
-                    style={styles.forgotButton}
-                >
-                    <Text style={styles.forgotText}>
-                        Esqueci minha senha
-                    </Text>
+                <TouchableOpacity activeOpacity={0.7} style={styles.forgotButton}>
+                    <Text style={styles.forgotText}>Esqueci minha senha</Text>
                 </TouchableOpacity>
 
                 {/* LOGIN BUTTON */}
@@ -156,7 +134,6 @@ export default function Login() {
                         source={require('../../assets/clay_backgrounds/green_bg.png')}
                         style={styles.loginButton}
                         imageStyle={styles.loginButtonImage}
-
                     >
                         <Text style={styles.loginButtonText}>
                             {loading ? 'Carregando...' : 'Entrar'}
@@ -171,9 +148,7 @@ export default function Login() {
                 >
                     <Text style={styles.registerText}>
                         Não possui uma conta?{' '}
-                        <Text style={styles.registerLink}>
-                            Cadastre-se
-                        </Text>
+                        <Text style={styles.registerLink}>Cadastre-se</Text>
                     </Text>
                 </TouchableOpacity>
 

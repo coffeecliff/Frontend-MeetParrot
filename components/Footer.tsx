@@ -1,4 +1,5 @@
 import React from 'react';
+
 import {
     View,
     TouchableOpacity,
@@ -10,8 +11,17 @@ import {
 
 import { useRouter } from 'expo-router';
 
+import { AnimalAvatar } from './AnimalAvatar';
+
+import { useAvatarShop } from '../context/AvatarShopContext';
+
 export function Footer() {
     const router = useRouter();
+
+    const {
+        equippedAvatar,
+        coins,
+    } = useAvatarShop();
 
     return (
         <View style={styles.footer}>
@@ -19,29 +29,39 @@ export function Footer() {
             {/* COINS */}
             <TouchableOpacity
                 onPress={() => router.push('/coins')}
-                activeOpacity={0.8}>
+                activeOpacity={0.8}
+            >
                 <ImageBackground
                     source={require('../assets/clay_backgrounds/coin_bg.png')}
                     style={styles.coinBox}
                     imageStyle={styles.coinBoxImage}
                     resizeMode="stretch"
                 >
+
                     <Image
                         source={require('../assets/coin.png')}
                         style={styles.coin}
                     />
 
-                    <Text style={styles.coinText}>999 +</Text>
+                    <Text style={styles.coinText}>
+                        {coins} +
+                    </Text>
+
                 </ImageBackground>
             </TouchableOpacity>
 
             {/* PROFILE */}
-            <TouchableOpacity activeOpacity={0.8} onPress={() => router.push('/profile')}>
-                <Image
-                    source={require('../assets/profile_icons/dog.png')}
+            <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => router.push('/profile')}
+            >
 
+                <AnimalAvatar
+                    size={60}
+                    source={equippedAvatar.image}
                     style={styles.profile}
                 />
+
             </TouchableOpacity>
 
         </View>
@@ -54,6 +74,7 @@ const styles = StyleSheet.create({
         bottom: 0,
 
         width: '100%',
+
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
@@ -82,7 +103,6 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
 
         overflow: 'hidden',
-
     },
 
     coinBoxImage: {
@@ -112,5 +132,4 @@ const styles = StyleSheet.create({
         shadowRadius: 10,
         elevation: 10,
     },
-
 });
