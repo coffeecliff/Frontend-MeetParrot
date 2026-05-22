@@ -1,3 +1,4 @@
+import { useAvatarShop } from './useAvatarShop';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChatMessage } from '../constants/types';
 import { wsService } from '../services/websocket';
@@ -6,6 +7,16 @@ import { useAuth } from './useAuth';
 
 export function useChat(category: string) {
   const { user } = useAuth();
+  const { equippedId } = useAvatarShop();
+
+  // Ref para sempre ler o equippedId atual dentro de callbacks sem stale closure
+  // e sem tornar startMatch instável com equippedId nas deps.
+  const equippedIdRef = useRef(equippedId);
+  useEffect(() => {
+    equippedIdRef.current = equippedId;
+  }, [equippedId]);
+
+  const [partnerAvatarId, setPartnerAvatarId] = useState<string>('1');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isMatching, setIsMatching] = useState(false);
@@ -49,6 +60,7 @@ export function useChat(category: string) {
     setIsMatching(false);
     setMessages([]);
     setPartnerName(data.partner?.username || 'usuário');
+    setPartnerAvatarId(String(data.partner?.avatarId || '1'));
     setQueuePosition(null);
     setEstimatedWait('');
     matchStarted.current = false;
@@ -115,6 +127,9 @@ export function useChat(category: string) {
     }
   }, [recoverStaleSocket]);
 
+  // FIX: usa equippedIdRef para sempre enviar o avatar atual sem tornar
+  // startMatch instável (equippedId fora das deps → sem recriação desnecessária
+  // do callback → sem re-execução do effect de auto-start → Searching estável).
   const startMatch = useCallback(async () => {
     if (matchStarted.current) {
       logger.chat.log('Match already started');
@@ -131,7 +146,8 @@ export function useChat(category: string) {
       setPartnerName('procurando...');
       await wsService.ensureConnected();
       await wsService.prepareForMatch();
-      wsService.findMatch(category);
+      // Lê sempre o valor atual via ref — nunca stale
+      wsService.findMatch(category, equippedIdRef.current);
     } catch (error) {
       logger.chat.error('Match error:', error);
       setIsMatching(false);
@@ -229,6 +245,6 @@ export function useChat(category: string) {
   }, [currentRoomId]);
 
   return useMemo(() => ({
-    messages, isConnected, isMatching, currentRoomId, partnerName, queuePosition, estimatedWait, partnerTyping, startMatch, cancelMatch, sendMessage, skipToNext, leaveAndReset,
-  }), [messages, isConnected, isMatching, currentRoomId, partnerName, queuePosition, estimatedWait, partnerTyping, startMatch, cancelMatch, sendMessage, skipToNext, leaveAndReset]);
+    messages, isConnected, isMatching, currentRoomId, partnerName, partnerAvatarId, queuePosition, estimatedWait, partnerTyping, startMatch, cancelMatch, sendMessage, skipToNext, leaveAndReset,
+  }), [messages, isConnected, isMatching, currentRoomId, partnerName, partnerAvatarId, queuePosition, estimatedWait, partnerTyping, startMatch, cancelMatch, sendMessage, skipToNext, leaveAndReset]);
 }

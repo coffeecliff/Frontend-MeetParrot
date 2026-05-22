@@ -1,9 +1,11 @@
+import { AVATARS } from '../../context/AvatarShopContext';
 // app/chat/room.tsx
 
 import React, {
     useState,
     useRef,
     useEffect,
+    useCallback,
 } from "react";
 
 import {
@@ -49,7 +51,10 @@ export default function ChatRoom() {
         isConnected,
         sendMessage,
         skipToNext,
+        cancelMatch,
+        startMatch,
         partnerName,
+        partnerAvatarId,
         isMatching,
         partnerTyping,
         queuePosition,
@@ -70,6 +75,25 @@ export default function ChatRoom() {
         setInputText("");
     };
 
+    /**
+     * handleNext — funciona em dois cenários:
+     * 1. isMatching=true: cancela o match atual e reinicia a busca
+     * 2. isMatching=false (chat ativo): chama skipToNext normalmente
+     */
+    const handleNext = useCallback(() => {
+        if (isMatching) {
+            // Está na fila de busca — cancela e reinicia
+            cancelMatch();
+            // Pequeno delay para o servidor processar o cancelamento antes de reentrar
+            setTimeout(() => {
+                startMatch();
+            }, 300);
+        } else {
+            // Está em um chat ativo — pula para o próximo
+            skipToNext();
+        }
+    }, [isMatching, cancelMatch, startMatch, skipToNext]);
+
     return (
         <KeyboardAvoidingView
             style={styles.container}
@@ -86,7 +110,7 @@ export default function ChatRoom() {
 
             <ChatRoomHeader
                 partnerName={isMatching ? 'Searching...' : partnerName}
-                onNext={skipToNext}
+                onNext={handleNext}
             />
 
             {/* CHAT AREA */}
@@ -111,13 +135,16 @@ export default function ChatRoom() {
                                     isOwn ? styles.ownRow : styles.partnerRow
                                 ]}
                             >
-                                {!isOwn && (
-                                    <AnimalAvatar
-                                        size={42}
-                                        source={require('../../assets/profile_icons/parrot.png')}
-                                        style={styles.messageProfile}
-                                    />
-                                )}
+                                {!isOwn && (() => {
+                                    const partnerAvatar = AVATARS.find(a => a.id === partnerAvatarId) ?? AVATARS[0];
+                                    return (
+                                        <AnimalAvatar
+                                            size={42}
+                                            source={partnerAvatar.image}
+                                            style={styles.messageProfile}
+                                        />
+                                    );
+                                })()}
 
                                 <View
                                     style={[
@@ -214,7 +241,7 @@ export default function ChatRoom() {
             {/* ============================================================
                 SEARCHING OVERLAY
                 Quando isMatching=true, cobre TODA a tela (position: absolute)
-                acima de todos os elementos. Recebe queue/wait como props.
+                acima de todos os elementos. Passa queue/wait como props.
             ============================================================ */}
             {isMatching && (
                 <View style={styles.searchingOverlay}>
@@ -242,9 +269,7 @@ const styles = StyleSheet.create({
         height: '100%',
     },
 
-    // ============================================================
-    // SEARCHING OVERLAY — absoluto, acima de TUDO na tela
-    // ============================================================
+    // Overlay absoluto sobre toda a tela
     searchingOverlay: {
         position: 'absolute',
         top: 0,
@@ -252,7 +277,7 @@ const styles = StyleSheet.create({
         right: 0,
         bottom: 0,
         zIndex: 999,
-        elevation: 999,  // Android
+        elevation: 999,
     },
 
     chatArea: {

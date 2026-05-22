@@ -4,9 +4,10 @@
  * Caminho: context/AvatarShopContext.tsx
  *
  * CORREÇÕES:
- * 1. Web usa localStorage ao invés de AsyncStorage (AsyncStorage não funciona no web)
- * 2. Compra/equip via confirm() nativo do browser no web (Alert.alert não existe no web)
- * 3. stateRef para evitar stale closure em callbacks assíncronos
+ * 1. Storage por userId — cada conta tem seus próprios dados de moedas/avatares
+ * 2. Reset de estado ao trocar de conta (userId muda)
+ * 3. Web usa localStorage, nativo usa AsyncStorage
+ * 4. stateRef para evitar stale closure em callbacks assíncronos
  */
 
 import React, {
@@ -48,6 +49,8 @@ interface AvatarShopContextType {
   buyAvatar: (avatar: AvatarItem) => 'ok' | 'insufficient' | 'already_owned';
   equipAvatar: (id: string) => void;
   addCoins: (amount: number) => void;
+  /** Deve ser chamado pelo AuthProvider ao fazer login/logout, passando o userId ou null */
+  setUserId: (id: string | null) => void;
 }
 
 // ==============================
@@ -67,7 +70,6 @@ export const AVATARS: AvatarItem[] = [
 ];
 
 const DEFAULT_AVATAR = AVATARS[0];
-const STORAGE_KEY = '@meetstranger:avatar_shop';
 
 const INITIAL_STATE: ShopState = {
   coins: 500,
@@ -76,9 +78,15 @@ const INITIAL_STATE: ShopState = {
 };
 
 // ==============================
+// CHAVE DE STORAGE — inclui userId para isolar por conta
+// ==============================
+function storageKey(userId: string) {
+  return `@meetstranger:avatar_shop:${userId}`;
+}
+
+// ==============================
 // STORAGE HELPERS (web vs native)
 // ==============================
-
 const storage = {
   async getItem(key: string): Promise<string | null> {
     if (Platform.OS === 'web') {
@@ -108,52 +116,74 @@ const AvatarShopContext = createContext<AvatarShopContextType | undefined>(undef
 // ==============================
 
 export function AvatarShopProvider({ children }: { children: ReactNode }) {
+  const [userId, setUserIdState] = useState<string | null>(null);
   const [state, setState] = useState<ShopState>(INITIAL_STATE);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // ✅ Ref sempre atualizada — evita stale closure em callbacks assíncronos
+  // Ref sempre atualizada — evita stale closure em callbacks assíncronos
   const stateRef = useRef<ShopState>(INITIAL_STATE);
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
 
-  // --- Carrega do storage na montagem ---
+  // ==============================
+  // Carrega do storage quando o userId muda
+  // Reset completo ao trocar de conta (userId diferente)
+  // ==============================
   useEffect(() => {
+    if (!userId) {
+      // Sem usuário logado: volta ao estado inicial e aguarda
+      setState(INITIAL_STATE);
+      stateRef.current = INITIAL_STATE;
+      setIsLoaded(false);
+      return;
+    }
+
+    setIsLoaded(false);
+
     (async () => {
       try {
-        const raw = await storage.getItem(STORAGE_KEY);
+        const raw = await storage.getItem(storageKey(userId));
         if (raw) {
           const parsed: ShopState = JSON.parse(raw);
+          // Garante que o avatar grátis sempre está desbloqueado
           if (!parsed.purchasedIds.includes('1')) {
             parsed.purchasedIds = ['1', ...parsed.purchasedIds];
           }
           setState(parsed);
           stateRef.current = parsed;
+        } else {
+          // Conta nova — começa com estado inicial
+          setState(INITIAL_STATE);
+          stateRef.current = INITIAL_STATE;
         }
       } catch (e) {
         console.warn('[AvatarShop] Erro ao carregar estado:', e);
+        setState(INITIAL_STATE);
+        stateRef.current = INITIAL_STATE;
       } finally {
         setIsLoaded(true);
       }
     })();
-  }, []);
+  }, [userId]);
 
-  // --- Persiste no storage a cada mudança ---
+  // Persiste no storage a cada mudança (apenas quando há usuário logado)
   useEffect(() => {
-    if (!isLoaded) return;
-    storage.setItem(STORAGE_KEY, JSON.stringify(state)).catch((e) =>
+    if (!isLoaded || !userId) return;
+    storage.setItem(storageKey(userId), JSON.stringify(state)).catch((e) =>
       console.warn('[AvatarShop] Erro ao salvar estado:', e)
     );
-  }, [state, isLoaded]);
+  }, [state, isLoaded, userId]);
 
-  // ✅ buyAvatar lê SEMPRE do stateRef.current (valor vivo)
+  // ==============================
+  // AÇÕES
+  // ==============================
+
   const buyAvatar = useCallback(
     (avatar: AvatarItem): 'ok' | 'insufficient' | 'already_owned' => {
       const current = stateRef.current;
-
       if (current.purchasedIds.includes(avatar.id)) return 'already_owned';
       if (current.coins < avatar.price) return 'insufficient';
-
       setState((prev) => ({
         ...prev,
         coins: prev.coins - avatar.price,
@@ -168,9 +198,13 @@ export function AvatarShopProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({ ...prev, equippedId: id }));
   }, []);
 
-  // ✅ addCoins — usado pela tela de compra de moedas
   const addCoins = useCallback((amount: number) => {
     setState((prev) => ({ ...prev, coins: prev.coins + amount }));
+  }, []);
+
+  // Exposto para o _layout.tsx passar o userId do AuthContext
+  const setUserId = useCallback((id: string | null) => {
+    setUserIdState(id);
   }, []);
 
   const equippedAvatar = useMemo(
@@ -189,8 +223,9 @@ export function AvatarShopProvider({ children }: { children: ReactNode }) {
       buyAvatar,
       equipAvatar,
       addCoins,
+      setUserId,
     }),
-    [state, equippedAvatar, isLoaded, buyAvatar, equipAvatar, addCoins]
+    [state, equippedAvatar, isLoaded, buyAvatar, equipAvatar, addCoins, setUserId]
   );
 
   return (

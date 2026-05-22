@@ -165,9 +165,9 @@ class WebSocketService {
     events.forEach((event) => this.socket?.removeAllListeners(event));
   }
 
-  findMatch(category: string): void {
-    logger.ws.log('Finding match:', category);
-    this.socket?.emit('find-match', { category });
+  findMatch(category: string, avatarId?: string): void {
+    logger.ws.log('Finding match:', category, 'avatarId:', avatarId);
+    this.socket?.emit('find-match', { category, avatarId });
   }
 
   cancelMatch(): void {
