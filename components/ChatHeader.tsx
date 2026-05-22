@@ -11,25 +11,35 @@ import {
 
 import { useRouter } from 'expo-router';
 
+import { AVATARS } from '../context/AvatarShopContext';
+import { AnimalAvatar } from './AnimalAvatar';
+
 interface ChatRoomHeaderProps {
     partnerName?: string;
+    partnerAvatarId?: string | number;
     onNext?: () => void;
 }
 
 export function ChatRoomHeader({
     partnerName = 'Ana Paula',
+    partnerAvatarId,
     onNext,
 }: ChatRoomHeaderProps) {
 
     const router = useRouter();
 
+    // IMPORTANTE:
+    // converte ambos para string para evitar erro de comparação
+    const partnerAvatar = AVATARS.find(a => a.id === partnerAvatarId) ?? AVATARS[0];
+
+    console.log('partnerAvatarId:', partnerAvatarId);
+    console.log('partnerAvatar:', partnerAvatar);
+
     return (
         <View style={styles.header}>
 
-            {/* LEFT SIDE */}
             <View style={styles.leftArea}>
 
-                {/* BACK */}
                 <TouchableOpacity
                     activeOpacity={0.7}
                     onPress={() => router.back()}
@@ -41,11 +51,11 @@ export function ChatRoomHeader({
                     />
                 </TouchableOpacity>
 
-                {/* PROFILE + NAME */}
                 <View style={styles.profileArea}>
 
-                    <Image
-                        source={require('../assets/profile_icons/parrot.png')}
+                    <AnimalAvatar
+                        size={42}
+                        source={partnerAvatar.image}
                         style={styles.profile}
                     />
 
@@ -57,7 +67,6 @@ export function ChatRoomHeader({
 
             </View>
 
-            {/* NEXT BUTTON */}
             <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={onNext}
@@ -125,11 +134,6 @@ const styles = StyleSheet.create({
     },
 
     profile: {
-        width: 42,
-        height: 42,
-
-        borderRadius: 999,
-
         marginRight: 8,
     },
 
@@ -147,7 +151,6 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-
     },
 
     nextButtonImage: {

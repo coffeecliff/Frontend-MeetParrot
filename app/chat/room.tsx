@@ -1,5 +1,6 @@
-import { AVATARS } from '../../context/AvatarShopContext';
 // app/chat/room.tsx
+
+import { AVATARS } from '../../context/AvatarShopContext';
 
 import React, {
     useState,
@@ -20,18 +21,25 @@ import {
     StyleSheet,
 } from "react-native";
 
-import { ChatRoomHeader } from "../../components/ChatHeader";
 import SearchingScreen from '../chat/searching';
+
 import { useLocalSearchParams, useRouter } from "expo-router";
+
 import { useChat } from "../../hooks/useChat";
+
 import { useAvatarShop } from "../../context/AvatarShopContext";
+
 import { AnimalAvatar } from "../../components/AnimalAvatar";
+
 import { Input } from "../../components/Input";
+
 import { CATEGORIES } from "../../constants/categories";
+
 
 const VALID_IDS = CATEGORIES.map(c => c.id);
 
 export default function ChatRoom() {
+
     const router = useRouter();
 
     const { category } =
@@ -41,7 +49,12 @@ export default function ChatRoom() {
         ? (category as string)
         : 'movies';
 
+    const currentCategory = CATEGORIES.find(
+        c => c.id === safeCategory
+    );
+
     const [inputText, setInputText] = useState("");
+
     const flatListRef = useRef<FlatList>(null);
 
     const { equippedAvatar } = useAvatarShop();
@@ -61,17 +74,26 @@ export default function ChatRoom() {
         estimatedWait,
     } = useChat(safeCategory);
 
+    // AVATAR DO PARCEIRO
+    const partnerAvatar =
+        AVATARS.find(a => a.id === partnerAvatarId)
+        ?? AVATARS[0];
+
     useEffect(() => {
         if (messages.length > 0) {
             setTimeout(() => {
-                flatListRef.current?.scrollToEnd({ animated: true });
+                flatListRef.current?.scrollToEnd({
+                    animated: true
+                });
             }, 50);
         }
     }, [messages]);
 
     const handleSendMessage = () => {
         if (inputText.trim() === "") return;
+
         sendMessage(inputText);
+
         setInputText("");
     };
 
@@ -81,24 +103,37 @@ export default function ChatRoom() {
      * 2. isMatching=false (chat ativo): chama skipToNext normalmente
      */
     const handleNext = useCallback(() => {
+
         if (isMatching) {
-            // Está na fila de busca — cancela e reinicia
+
             cancelMatch();
-            // Pequeno delay para o servidor processar o cancelamento antes de reentrar
+
             setTimeout(() => {
                 startMatch();
             }, 300);
+
         } else {
-            // Está em um chat ativo — pula para o próximo
+
             skipToNext();
+
         }
-    }, [isMatching, cancelMatch, startMatch, skipToNext]);
+
+    }, [
+        isMatching,
+        cancelMatch,
+        startMatch,
+        skipToNext
+    ]);
 
     return (
         <KeyboardAvoidingView
             style={styles.container}
             behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === 'android' ? -85 : 0}
+            keyboardVerticalOffset={
+                Platform.OS === 'android'
+                    ? -85
+                    : 0
+            }
         >
 
             {/* BACKGROUND */}
@@ -108,10 +143,75 @@ export default function ChatRoom() {
                 resizeMode="cover"
             />
 
-            <ChatRoomHeader
-                partnerName={isMatching ? 'Searching...' : partnerName}
-                onNext={handleNext}
-            />
+            {/* HEADER */}
+            <View style={styles.header}>
+
+                {/* LEFT SIDE */}
+                <View style={styles.leftArea}>
+
+                    {/* BACK */}
+                    <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => router.back()}
+                        style={styles.backButton}
+                    >
+                        <Image
+                            source={require('../../assets/buttons/back_bt.png')}
+                            style={styles.backIcon}
+                        />
+                    </TouchableOpacity>
+
+                    {/* PROFILE + NAME */}
+                    <View style={styles.profileArea}>
+
+                        <AnimalAvatar
+                            size={42}
+                            source={partnerAvatar.image}
+                            style={styles.profile}
+                        />
+
+                        <View style={styles.nameContainer}>
+
+                            <Text style={styles.chatCategory}>
+                                {currentCategory?.name}
+                            </Text>
+
+                            <Text style={styles.name}>
+                                {isMatching
+                                    ? 'Searching...'
+                                    : partnerName}
+                            </Text>
+
+                        </View>
+
+                    </View>
+
+                </View>
+
+                {/* NEXT BUTTON */}
+                <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={handleNext}
+                >
+                    <ImageBackground
+                        source={require('../../assets/clay_backgrounds/coin_bg.png')}
+                        style={styles.nextButton}
+                        imageStyle={styles.nextButtonImage}
+                    >
+
+                        <Text style={styles.nextText}>
+                            Próximo
+                        </Text>
+
+                        <Image
+                            source={require('../../assets/buttons/next_bt.png')}
+                            style={styles.nextIcon}
+                        />
+
+                    </ImageBackground>
+                </TouchableOpacity>
+
+            </View>
 
             {/* CHAT AREA */}
             <View style={styles.chatArea}>
@@ -121,37 +221,46 @@ export default function ChatRoom() {
                     ref={flatListRef}
                     data={messages}
                     keyExtractor={(item, index) =>
-                        item.id?.toString() || index.toString()
+                        item.id?.toString()
+                        || index.toString()
                     }
                     showsVerticalScrollIndicator={false}
-                    contentContainerStyle={styles.messagesContainer}
+                    contentContainerStyle={
+                        styles.messagesContainer
+                    }
                     renderItem={({ item }) => {
+
                         const isOwn = item.isUser;
 
                         return (
                             <View
                                 style={[
                                     styles.messageRow,
-                                    isOwn ? styles.ownRow : styles.partnerRow
+
+                                    isOwn
+                                        ? styles.ownRow
+                                        : styles.partnerRow
                                 ]}
                             >
-                                {!isOwn && (() => {
-                                    const partnerAvatar = AVATARS.find(a => a.id === partnerAvatarId) ?? AVATARS[0];
-                                    return (
-                                        <AnimalAvatar
-                                            size={42}
-                                            source={partnerAvatar.image}
-                                            style={styles.messageProfile}
-                                        />
-                                    );
-                                })()}
+
+                                {!isOwn && (
+                                    <AnimalAvatar
+                                        size={42}
+                                        source={partnerAvatar.image}
+                                        style={styles.messageProfile}
+                                    />
+                                )}
 
                                 <View
                                     style={[
                                         styles.messageBubble,
-                                        isOwn ? styles.ownBubble : styles.partnerBubble
+
+                                        isOwn
+                                            ? styles.ownBubble
+                                            : styles.partnerBubble
                                     ]}
                                 >
+
                                     {!isOwn && item.userName && (
                                         <Text style={styles.senderName}>
                                             {item.userName}
@@ -164,15 +273,19 @@ export default function ChatRoom() {
 
                                     {item.timestamp && (
                                         <Text style={styles.timestamp}>
+
                                             {typeof item.timestamp === 'string'
                                                 ? item.timestamp
-                                                : new Date(item.timestamp)
-                                                    .toLocaleTimeString([], {
-                                                        hour: '2-digit',
-                                                        minute: '2-digit',
-                                                    })}
+                                                : new Date(
+                                                    item.timestamp
+                                                ).toLocaleTimeString([], {
+                                                    hour: '2-digit',
+                                                    minute: '2-digit',
+                                                })}
+
                                         </Text>
                                     )}
+
                                 </View>
 
                                 {isOwn && (
@@ -182,6 +295,7 @@ export default function ChatRoom() {
                                         style={styles.messageProfile}
                                     />
                                 )}
+
                             </View>
                         );
                     }}
@@ -196,9 +310,11 @@ export default function ChatRoom() {
 
                 {/* INPUT AREA */}
                 <View style={styles.bottomArea}>
+
                     <View style={styles.inputContainer}>
 
                         <View style={styles.inputWrapper}>
+
                             <Input
                                 value={inputText}
                                 onChangeText={setInputText}
@@ -208,16 +324,19 @@ export default function ChatRoom() {
                                 multiline
                                 maxLength={500}
                             />
+
                         </View>
 
                         <TouchableOpacity
                             activeOpacity={0.8}
                             style={styles.emojiButton}
                         >
+
                             <Image
                                 source={require('../../assets/buttons/emoji_bt.png')}
                                 style={styles.emojiIcon}
                             />
+
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -226,30 +345,31 @@ export default function ChatRoom() {
                             activeOpacity={0.8}
                             style={styles.sendButtonWrapper}
                         >
+
                             <ImageBackground
                                 source={require('../../assets/buttons/send_bt.png')}
                                 style={styles.sendButton}
                                 imageStyle={styles.sendButtonImage}
                             />
+
                         </TouchableOpacity>
 
                     </View>
+
                 </View>
 
             </View>
 
-            {/* ============================================================
-                SEARCHING OVERLAY
-                Quando isMatching=true, cobre TODA a tela (position: absolute)
-                acima de todos os elementos. Passa queue/wait como props.
-            ============================================================ */}
+            {/* SEARCHING OVERLAY */}
             {isMatching && (
                 <View style={styles.searchingOverlay}>
+
                     <SearchingScreen
                         onBack={() => router.push('/chat/select')}
                         queuePosition={queuePosition}
                         estimatedWait={estimatedWait}
                     />
+
                 </View>
             )}
 
@@ -258,6 +378,7 @@ export default function ChatRoom() {
 }
 
 const styles = StyleSheet.create({
+
     container: {
         flex: 1,
         backgroundColor: '#fff',
@@ -267,6 +388,85 @@ const styles = StyleSheet.create({
         position: 'absolute',
         width: '100%',
         height: '100%',
+    },
+
+    // HEADER
+    header: {
+        zIndex: 9999,
+
+        width: '100%',
+
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+
+        backgroundColor: '#FFFFFF',
+
+        paddingTop: 25,
+        paddingHorizontal: 12,
+        paddingBottom: 12,
+
+        borderBottomLeftRadius: 25,
+        borderBottomRightRadius: 25,
+    },
+
+    leftArea: {
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+    },
+
+    backButton: {
+        marginBottom: 10,
+    },
+
+    backIcon: {
+        width: 50,
+        height: 50,
+    },
+
+    profileArea: {
+        flexDirection: 'row',
+        alignItems: 'center',
+
+        marginLeft: 4,
+    },
+
+    profile: {
+        marginRight: 8,
+    },
+
+    name: {
+        color: '#7A7DF0',
+
+        fontSize: 18,
+        fontWeight: '800',
+    },
+
+    nextButton: {
+        width: 130,
+        height: 52,
+
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+
+    nextButtonImage: {
+        borderRadius: 999,
+    },
+
+    nextText: {
+        color: '#7A7DF0',
+
+        fontSize: 18,
+        fontWeight: '800',
+
+        marginRight: 6,
+    },
+
+    nextIcon: {
+        width: 30,
+        height: 30,
     },
 
     // Overlay absoluto sobre toda a tela
@@ -414,5 +614,18 @@ const styles = StyleSheet.create({
 
     sendButtonImage: {
         borderRadius: 999,
+    },
+
+    nameContainer: {
+        justifyContent: 'center',
+    },
+
+    chatCategory: {
+        color: '#A0A3FF',
+
+        fontSize: 13,
+        fontWeight: '700',
+
+        marginBottom: 2,
     },
 });
