@@ -67,7 +67,7 @@ export default function SearchingScreen({ onBack, queuePosition, estimatedWait }
                     <View style={styles.queueContainer}>
                         {!!queuePosition && (
                             <Text style={styles.queueText}>
-                                🔢 Posição na fila: {queuePosition}
+                                Posição na fila: {queuePosition}
                             </Text>
                         )}
                         {!!estimatedWait && (
@@ -96,6 +96,7 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#FFFFFF',
+        zIndex: 9999,
     },
 
     background: {
@@ -105,7 +106,7 @@ const styles = StyleSheet.create({
     },
 
     header: {
-        zIndex: 9999,
+        zIndex: 9998,
         width: '100%',
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -167,5 +168,6 @@ const styles = StyleSheet.create({
     parrot: {
         width: 260,
         height: 260,
+        marginBottom: 80
     },
 });

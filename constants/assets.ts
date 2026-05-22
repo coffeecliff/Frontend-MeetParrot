@@ -7,6 +7,6 @@ export const appImages = {
   perfil6:require('../assets/profile_icons/bear.png'),
   perfil7:require('../assets/profile_icons/bunny.png'),
   perfil8:require('../assets/profile_icons/racoon.png'),
-  perfil9:require('../assets/profile_icons/tiger.png'),
-  perfil10:require('../assets/profile_icons/plant.png'),
+  perfil9:require('../assets/profile_icons/plant.png'),
+  perfil10:require('../assets/profile_icons/tiger.png'),
 } as const;
